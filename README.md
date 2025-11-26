@@ -261,14 +261,29 @@ ros2 topic echo /wheel_velocities
 
 You should see the policy outputting wheel velocities in response to the velocity command.
 
+### Output Modes
+
+The policy controller supports two output modes:
+
+**Mode 1: Twist-to-Twist (default)** - For Nav2 integration
+- Subscribes: `/policy_cmd_vel_in` (Twist from Nav2)
+- Publishes: `/cmd_vel` (Twist to robot/simulator)
+- Use case: Policy sits between Nav2 and robot, improving velocity tracking
+
+**Mode 2: Twist-to-WheelVelocities** - For direct motor control
+- Subscribes: `/cmd_vel` (Twist)
+- Publishes: `/wheel_velocities` (Float32MultiArray)
+- Use case: Robot with direct wheel velocity control interface
+
 ### Topics
 
 | Topic | Type | Description |
 |-------|------|-------------|
-| `/cmd_vel` (sub) | geometry_msgs/Twist | Velocity commands from Nav2 |
+| `/policy_cmd_vel_in` (sub) | geometry_msgs/Twist | Velocity commands (Mode 1 default) |
+| `/cmd_vel` (pub/sub) | geometry_msgs/Twist | Output (Mode 1) or Input (Mode 2) |
 | `/odom` (sub) | nav_msgs/Odometry | Current robot velocity feedback |
 | `/joint_states` (sub) | sensor_msgs/JointState | Current wheel velocities |
-| `/wheel_velocities` (pub) | std_msgs/Float32MultiArray | Wheel velocity targets [fl, fr, rl, rr] |
+| `/wheel_velocities` (pub) | std_msgs/Float32MultiArray | Wheel velocity targets (Mode 2 only) |
 
 ### Parameters
 
@@ -276,19 +291,80 @@ You should see the policy outputting wheel velocities in response to the velocit
 |-----------|---------|-------------|
 | `model_path` | auto-detect | Path to ONNX or JIT model |
 | `model_type` | "onnx" | Model format: "onnx" or "jit" |
+| `output_mode` | "twist" | Output mode: "twist" or "wheel_velocities" |
+| `input_topic` | "/policy_cmd_vel_in" | Input velocity command topic |
+| `output_topic` | "/cmd_vel" | Output topic (Twist or Float32MultiArray) |
 | `action_scale` | 10.0 | Wheel velocity scaling factor |
 | `max_lin_vel` | 0.5 | Max linear velocity (m/s) |
 | `max_ang_vel` | 1.0 | Max angular velocity (rad/s) |
 | `control_frequency` | 30.0 | Control loop rate (Hz) |
+| `wheel_radius` | 0.040 | Wheel radius in meters |
+| `wheelbase` | 0.095 | Front-rear axle distance in meters |
+| `track_width` | 0.205 | Left-right wheel distance in meters |
 
 ### Integration with Nav2
 
-The policy controller subscribes to `/cmd_vel` which Nav2's local planner publishes to. To use the trained policy instead of the default controller:
+The trained policy improves velocity tracking by learning the robot's dynamics. It sits between Nav2 and the robot:
 
-1. Launch the policy controller node
-2. The node will receive velocity commands from Nav2
-3. The neural network outputs optimal wheel velocities
-4. Your motor controller subscribes to `/wheel_velocities`
+```
+Nav2 Controller Server → /policy_cmd_vel_in → Policy Node → /cmd_vel → Robot
+```
+
+**Setup for Nav2 Integration:**
+
+1. **Remap Nav2's output topic** in your Nav2 params:
+   ```yaml
+   controller_server:
+     ros__parameters:
+       # Remap cmd_vel output to policy input
+       cmd_vel_topic: "/policy_cmd_vel_in"
+   ```
+
+2. **Launch the policy controller:**
+   ```bash
+   ros2 launch ogre_policy_controller policy_controller.launch.py
+   ```
+
+3. **Verify the data flow:**
+   ```bash
+   # Check Nav2 publishes to policy input
+   ros2 topic echo /policy_cmd_vel_in
+
+   # Check policy outputs to cmd_vel
+   ros2 topic echo /cmd_vel
+   ```
+
+**Alternative: Use topic remapping** instead of modifying Nav2 params:
+```bash
+ros2 launch ogre_policy_controller policy_controller.launch.py \
+    input_topic:=/cmd_vel \
+    output_topic:=/robot_cmd_vel
+```
+
+Then remap your robot's velocity input to `/robot_cmd_vel`.
+
+### Testing with Isaac Sim
+
+To test the policy controller with Isaac Sim before deploying to hardware:
+
+```bash
+# Terminal 1: Start Isaac Sim with ogre.usd and press Play
+
+# Terminal 2: Launch the policy controller (uses system Python, not conda)
+conda deactivate  # Important: exit Isaac Lab conda env
+cd ~/ros2_ws
+source install/setup.bash
+ros2 launch ogre_policy_controller policy_controller.launch.py
+
+# Terminal 3: Send test commands
+ros2 topic pub /policy_cmd_vel_in geometry_msgs/msg/Twist \
+    "{linear: {x: 0.2, y: 0.0, z: 0.0}, angular: {x: 0.0, y: 0.0, z: 0.0}}" -r 10
+
+# Terminal 4: Monitor policy output
+ros2 topic echo /cmd_vel
+```
+
+The robot in Isaac Sim should move forward. The policy converts the velocity command through its neural network, optimizing for the learned robot dynamics.
 
 ## File Structure
 

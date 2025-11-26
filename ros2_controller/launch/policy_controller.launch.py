@@ -25,6 +25,24 @@ def generate_launch_description():
         description='Model type: onnx or jit'
     )
 
+    output_mode_arg = DeclareLaunchArgument(
+        'output_mode',
+        default_value='twist',
+        description='Output mode: twist (for Nav2) or wheel_velocities (for direct motor control)'
+    )
+
+    input_topic_arg = DeclareLaunchArgument(
+        'input_topic',
+        default_value='/policy_cmd_vel_in',
+        description='Input velocity command topic'
+    )
+
+    output_topic_arg = DeclareLaunchArgument(
+        'output_topic',
+        default_value='/cmd_vel',
+        description='Output topic (Twist or Float32MultiArray depending on mode)'
+    )
+
     params_file_arg = DeclareLaunchArgument(
         'params_file',
         default_value=os.path.join(pkg_dir, 'config', 'policy_controller_params.yaml'),
@@ -42,6 +60,9 @@ def generate_launch_description():
             {
                 'model_path': LaunchConfiguration('model_path'),
                 'model_type': LaunchConfiguration('model_type'),
+                'output_mode': LaunchConfiguration('output_mode'),
+                'input_topic': LaunchConfiguration('input_topic'),
+                'output_topic': LaunchConfiguration('output_topic'),
             }
         ],
         remappings=[
@@ -53,6 +74,9 @@ def generate_launch_description():
     return LaunchDescription([
         model_path_arg,
         model_type_arg,
+        output_mode_arg,
+        input_topic_arg,
+        output_topic_arg,
         params_file_arg,
         policy_controller_node,
     ])

@@ -3,20 +3,21 @@
 Ogre Policy Controller Node
 
 This ROS2 node runs a trained RL policy to control the Ogre mecanum robot.
-It subscribes to velocity commands and publishes wheel velocities.
+It acts as an intermediary between Nav2 and the robot, using a learned policy
+to convert velocity commands to optimal wheel velocities, then back to Twist.
 
 The policy was trained in Isaac Lab to efficiently track velocity commands
 for a mecanum drive robot.
 
-Subscriptions:
-    /cmd_vel (geometry_msgs/Twist): Target velocity command from Nav2
-    /odom (nav_msgs/Odometry): Current robot odometry for velocity feedback
-    /joint_states (sensor_msgs/JointState): Current wheel velocities
+Mode 1 (default): Twist-to-Twist
+    Subscribes: /policy_cmd_vel_in (Twist from Nav2)
+    Publishes:  /cmd_vel (Twist to robot/simulator)
 
-Publications:
-    /wheel_velocities (std_msgs/Float32MultiArray): Wheel velocity targets [fl, fr, rl, rr]
+Mode 2: Twist-to-WheelVelocities
+    Subscribes: /cmd_vel (Twist)
+    Publishes:  /wheel_velocities (Float32MultiArray)
 
-Alternatively publishes to individual wheel topics if configured.
+The policy improves velocity tracking by learning the robot's dynamics.
 """
 
 import os
@@ -60,6 +61,14 @@ class PolicyControllerNode(Node):
         self.declare_parameter('max_ang_vel', 1.0)
         self.declare_parameter('control_frequency', 30.0)
         self.declare_parameter('wheel_joint_names', ['fl_joint', 'fr_joint', 'rl_joint', 'rr_joint'])
+        self.declare_parameter('output_mode', 'twist')  # 'twist' or 'wheel_velocities'
+        self.declare_parameter('input_topic', '/policy_cmd_vel_in')
+        self.declare_parameter('output_topic', '/cmd_vel')
+
+        # Robot parameters for inverse kinematics (wheel vel -> twist)
+        self.declare_parameter('wheel_radius', 0.040)  # 40mm
+        self.declare_parameter('wheelbase', 0.095)     # 95mm
+        self.declare_parameter('track_width', 0.205)   # 205mm
 
         # Get parameters
         model_path = self.get_parameter('model_path').get_parameter_value().string_value
@@ -69,6 +78,15 @@ class PolicyControllerNode(Node):
         self.max_ang_vel = self.get_parameter('max_ang_vel').get_parameter_value().double_value
         control_freq = self.get_parameter('control_frequency').get_parameter_value().double_value
         self.wheel_joint_names = self.get_parameter('wheel_joint_names').get_parameter_value().string_array_value
+        self.output_mode = self.get_parameter('output_mode').get_parameter_value().string_value
+        input_topic = self.get_parameter('input_topic').get_parameter_value().string_value
+        output_topic = self.get_parameter('output_topic').get_parameter_value().string_value
+
+        # Robot parameters
+        self.wheel_radius = self.get_parameter('wheel_radius').get_parameter_value().double_value
+        self.wheelbase = self.get_parameter('wheelbase').get_parameter_value().double_value
+        self.track_width = self.get_parameter('track_width').get_parameter_value().double_value
+        self.L = (self.wheelbase + self.track_width) / 2.0
 
         # Find model if not specified
         if not model_path:
@@ -92,10 +110,10 @@ class PolicyControllerNode(Node):
             depth=10
         )
 
-        # Subscribers
+        # Subscriber for velocity commands
         self.cmd_vel_sub = self.create_subscription(
             Twist,
-            '/cmd_vel',
+            input_topic,
             self._cmd_vel_callback,
             10
         )
@@ -114,12 +132,11 @@ class PolicyControllerNode(Node):
             sensor_qos
         )
 
-        # Publisher for wheel velocities
-        self.wheel_vel_pub = self.create_publisher(
-            Float32MultiArray,
-            '/wheel_velocities',
-            10
-        )
+        # Publisher based on output mode
+        if self.output_mode == 'twist':
+            self.output_pub = self.create_publisher(Twist, output_topic, 10)
+        else:
+            self.output_pub = self.create_publisher(Float32MultiArray, output_topic, 10)
 
         # Control loop timer
         self.control_timer = self.create_timer(
@@ -130,6 +147,9 @@ class PolicyControllerNode(Node):
         self.get_logger().info(f'Ogre Policy Controller started')
         self.get_logger().info(f'  Model: {model_path}')
         self.get_logger().info(f'  Type: {model_type}')
+        self.get_logger().info(f'  Output mode: {self.output_mode}')
+        self.get_logger().info(f'  Input topic: {input_topic}')
+        self.get_logger().info(f'  Output topic: {output_topic}')
         self.get_logger().info(f'  Action scale: {self.action_scale}')
         self.get_logger().info(f'  Control frequency: {control_freq} Hz')
 
@@ -229,6 +249,37 @@ class PolicyControllerNode(Node):
 
         return actions
 
+    def _wheel_vel_to_twist(self, wheel_vel: np.ndarray) -> Twist:
+        """Convert wheel velocities to Twist using forward kinematics.
+
+        Mecanum forward kinematics:
+            vx = (w_fl + w_fr + w_rl + w_rr) * R / 4
+            vy = (-w_fl + w_fr + w_rl - w_rr) * R / 4
+            vtheta = (-w_fl + w_fr - w_rl + w_rr) * R / (4 * L)
+
+        Where:
+            w_fl, w_fr, w_rl, w_rr = wheel angular velocities (rad/s)
+            R = wheel radius
+            L = (wheelbase + track_width) / 2
+        """
+        w_fl, w_fr, w_rl, w_rr = wheel_vel
+        R = self.wheel_radius
+        L = self.L
+
+        vx = (w_fl + w_fr + w_rl + w_rr) * R / 4.0
+        vy = (-w_fl + w_fr + w_rl - w_rr) * R / 4.0
+        vtheta = (-w_fl + w_fr - w_rl + w_rr) * R / (4.0 * L)
+
+        twist = Twist()
+        twist.linear.x = float(vx)
+        twist.linear.y = float(vy)
+        twist.linear.z = 0.0
+        twist.angular.x = 0.0
+        twist.angular.y = 0.0
+        twist.angular.z = float(vtheta)
+
+        return twist
+
     def _control_loop(self):
         """Main control loop - runs at control_frequency."""
         # Check for stale commands (stop if no cmd_vel for 0.5s)
@@ -240,13 +291,19 @@ class PolicyControllerNode(Node):
         obs = self._build_observation()
         actions = self._run_policy(obs)
 
-        # Scale actions to wheel velocities
+        # Scale actions to wheel velocities (rad/s)
         wheel_velocities = actions * self.action_scale
 
-        # Publish wheel velocities
-        msg = Float32MultiArray()
-        msg.data = wheel_velocities.tolist()
-        self.wheel_vel_pub.publish(msg)
+        # Publish based on output mode
+        if self.output_mode == 'twist':
+            # Convert wheel velocities back to Twist
+            twist_msg = self._wheel_vel_to_twist(wheel_velocities)
+            self.output_pub.publish(twist_msg)
+        else:
+            # Publish raw wheel velocities
+            msg = Float32MultiArray()
+            msg.data = wheel_velocities.tolist()
+            self.output_pub.publish(msg)
 
 
 def main(args=None):

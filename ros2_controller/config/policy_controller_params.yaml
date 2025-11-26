@@ -6,6 +6,15 @@ ogre_policy_controller:
     # Model type: 'onnx' or 'jit'
     model_type: "onnx"
 
+    # Output mode: 'twist' (for Nav2) or 'wheel_velocities' (for direct motor control)
+    output_mode: "twist"
+
+    # Topic configuration
+    # Mode 1 (twist): subscribes to input_topic, publishes Twist to output_topic
+    # Mode 2 (wheel_velocities): subscribes to input_topic, publishes Float32MultiArray to output_topic
+    input_topic: "/policy_cmd_vel_in"
+    output_topic: "/cmd_vel"
+
     # Action scale - must match training config
     action_scale: 10.0
 
@@ -15,6 +24,11 @@ ogre_policy_controller:
 
     # Control loop frequency (Hz)
     control_frequency: 30.0
+
+    # Robot parameters for forward kinematics (wheel velocities -> Twist)
+    wheel_radius: 0.040    # 40mm
+    wheelbase: 0.095       # 95mm front-rear
+    track_width: 0.205     # 205mm left-right
 
     # Wheel joint names in order: [fl, fr, rl, rr]
     wheel_joint_names:
