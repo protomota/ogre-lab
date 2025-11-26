@@ -125,44 +125,9 @@ Learning iteration 50/100
 - **Negative reward** = reward function needs tuning
 - **Short episodes** = robots falling or crashing
 
-## Testing a Trained Model
+## Testing and Exporting a Trained Model
 
-### Step 1: Find Your Training Run
-
-First, find your training run folder (see [Exporting for Deployment](#exporting-for-deployment) for detailed instructions):
-
-```bash
-conda activate env_isaaclab
-cd ~/isaac-lab/IsaacLab
-
-# List training runs (newest first)
-ls -lt logs/rsl_rl/ogre_navigation/
-```
-
-**Example output:**
-```
-total 24
-drwxrwxr-x 4 brad brad 4096 Nov 26 15:09 2025-11-26_13-34-55   <-- use this folder name
-drwxrwxr-x 5 brad brad 4096 Nov 26 12:16 2025-11-26_10-38-02
-```
-
-### Step 2: View Policy in Isaac Sim
-
-Use your run folder name from Step 1 in the checkpoint path:
-
-```bash
-# Example with run folder "2025-11-26_13-34-55"
-./isaaclab.sh -p scripts/reinforcement_learning/rsl_rl/play.py \
-    --task Isaac-Ogre-Navigation-Direct-v0 \
-    --num_envs 16 \
-    --checkpoint logs/rsl_rl/ogre_navigation/2025-11-26_13-34-55/model_999.pt
-```
-
-This opens Isaac Sim with 16 robots running the trained policy so you can visually verify the behavior.
-
-## Exporting for Deployment
-
-Running `play.py` automatically exports the model to deployment formats.
+Running `play.py` both visualizes the policy AND exports it to ONNX/JIT formats for deployment.
 
 ### Step 1: Find Your Training Run
 
@@ -179,28 +144,22 @@ ls -lt logs/rsl_rl/ogre_navigation/
 **Example output:**
 ```
 total 24
-drwxrwxr-x 4 brad brad 4096 Nov 26 15:09 2025-11-26_13-34-55   <-- this is your run folder
+drwxrwxr-x 4 brad brad 4096 Nov 26 15:09 2025-11-26_13-34-55   <-- use this folder name
 drwxrwxr-x 5 brad brad 4096 Nov 26 12:16 2025-11-26_10-38-02
-drwxrwxr-x 5 brad brad 4096 Nov 26 10:32 2025-11-26_10-22-58
 ```
 
-The **top entry** is your most recent training run. The folder name (e.g., `2025-11-26_13-34-55`) is what you'll use in the next steps.
+The **top entry** is your most recent run. Use that folder name in the commands below.
 
-**Verify the run has a trained model:**
-```bash
-# Replace with YOUR run folder name from the output above
-ls logs/rsl_rl/ogre_navigation/2025-11-26_13-34-55/
-
-# Expected output - look for model_999.pt (or highest number):
-# model_0.pt  model_100.pt  model_200.pt ... model_999.pt
-```
-
-### Step 2: Export the Model
-
-Use the **full path** with your run folder name:
+### Step 2: Run and Export the Policy
 
 ```bash
-# Example with run folder "2025-11-26_13-34-55"
+# With GUI - watch 16 robots run the policy
+./isaaclab.sh -p scripts/reinforcement_learning/rsl_rl/play.py \
+    --task Isaac-Ogre-Navigation-Direct-v0 \
+    --num_envs 16 \
+    --checkpoint logs/rsl_rl/ogre_navigation/2025-11-26_13-34-55/model_999.pt
+
+# OR headless - just export without visualization
 ./isaaclab.sh -p scripts/reinforcement_learning/rsl_rl/play.py \
     --task Isaac-Ogre-Navigation-Direct-v0 \
     --num_envs 1 \
@@ -208,29 +167,24 @@ Use the **full path** with your run folder name:
     --headless
 ```
 
-This creates an `exported/` folder inside the run directory:
+Both commands create an `exported/` folder:
 ```
 logs/rsl_rl/ogre_navigation/2025-11-26_13-34-55/
 ├── model_999.pt          # Training checkpoint
 └── exported/
     ├── policy.pt         # JIT compiled PyTorch model
-    └── policy.onnx       # ONNX format for deployment
+    └── policy.onnx       # ONNX format for ROS2 deployment
 ```
 
-### Step 3: Copy Models to Deployment Location
+### Step 3: Deploy to ROS2
 
 ```bash
-# Still in ~/isaac-lab/IsaacLab with your run folder name
+# Copy exported models
 cp logs/rsl_rl/ogre_navigation/2025-11-26_13-34-55/exported/policy.onnx ~/ogre-lab/models/
 cp logs/rsl_rl/ogre_navigation/2025-11-26_13-34-55/exported/policy.pt ~/ogre-lab/models/
-```
 
-### Step 4: Rebuild ROS2 Package
-
-```bash
-# Exit Isaac Lab conda env (uses different Python)
+# Rebuild ROS2 package (exit conda first - uses different Python)
 conda deactivate
-
 cd ~/ros2_ws
 colcon build --packages-select ogre_policy_controller --symlink-install
 source install/setup.bash
