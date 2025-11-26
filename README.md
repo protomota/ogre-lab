@@ -127,26 +127,38 @@ Learning iteration 50/100
 
 ## Testing a Trained Model
 
-### View Policy in Isaac Sim
+### Step 1: Find Your Training Run
+
+First, find your training run folder (see [Exporting for Deployment](#exporting-for-deployment) for detailed instructions):
 
 ```bash
 conda activate env_isaaclab
 cd ~/isaac-lab/IsaacLab
 
-# Test with 16 robots visualized
+# List training runs (newest first)
+ls -lt logs/rsl_rl/ogre_navigation/
+```
+
+**Example output:**
+```
+total 24
+drwxrwxr-x 4 brad brad 4096 Nov 26 15:09 2025-11-26_13-34-55   <-- use this folder name
+drwxrwxr-x 5 brad brad 4096 Nov 26 12:16 2025-11-26_10-38-02
+```
+
+### Step 2: View Policy in Isaac Sim
+
+Use your run folder name from Step 1 in the checkpoint path:
+
+```bash
+# Example with run folder "2025-11-26_13-34-55"
 ./isaaclab.sh -p scripts/reinforcement_learning/rsl_rl/play.py \
     --task Isaac-Ogre-Navigation-Direct-v0 \
     --num_envs 16 \
-    --checkpoint logs/rsl_rl/ogre_navigation/<run_folder>/model_99.pt
+    --checkpoint logs/rsl_rl/ogre_navigation/2025-11-26_13-34-55/model_999.pt
 ```
 
-Replace `<run_folder>` with your training run timestamp (e.g., `2025-11-26_10-22-58`).
-
-### List Available Checkpoints
-
-```bash
-ls ~/isaac-lab/IsaacLab/logs/rsl_rl/ogre_navigation/
-```
+This opens Isaac Sim with 16 robots running the trained policy so you can visually verify the behavior.
 
 ## Exporting for Deployment
 
