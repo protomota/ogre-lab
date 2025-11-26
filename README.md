@@ -154,7 +154,7 @@ Running `play.py` automatically exports the model to deployment formats.
 
 ### Step 1: Find Your Training Run
 
-Training runs are saved with timestamps like `2025-11-26_13-34-55`:
+Training runs are saved in folders named with timestamps (format: `YYYY-MM-DD_HH-MM-SS`).
 
 ```bash
 conda activate env_isaaclab
@@ -162,15 +162,25 @@ cd ~/isaac-lab/IsaacLab
 
 # List training runs (newest first)
 ls -lt logs/rsl_rl/ogre_navigation/
+```
 
-# Example output:
-# drwxrwxr-x 4 brad brad 4096 Nov 26 15:09 2025-11-26_13-34-55  <-- latest
-# drwxrwxr-x 5 brad brad 4096 Nov 26 12:16 2025-11-26_10-38-02
-# drwxrwxr-x 5 brad brad 4096 Nov 26 10:32 2025-11-26_10-22-58
+**Example output:**
+```
+total 24
+drwxrwxr-x 4 brad brad 4096 Nov 26 15:09 2025-11-26_13-34-55   <-- this is your run folder
+drwxrwxr-x 5 brad brad 4096 Nov 26 12:16 2025-11-26_10-38-02
+drwxrwxr-x 5 brad brad 4096 Nov 26 10:32 2025-11-26_10-22-58
+```
 
-# Check what models are in a run
+The **top entry** is your most recent training run. The folder name (e.g., `2025-11-26_13-34-55`) is what you'll use in the next steps.
+
+**Verify the run has a trained model:**
+```bash
+# Replace with YOUR run folder name from the output above
 ls logs/rsl_rl/ogre_navigation/2025-11-26_13-34-55/
-# Shows: model_0.pt, model_100.pt, ..., model_999.pt
+
+# Expected output - look for model_999.pt (or highest number):
+# model_0.pt  model_100.pt  model_200.pt ... model_999.pt
 ```
 
 ### Step 2: Export the Model
