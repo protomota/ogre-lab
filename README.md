@@ -235,7 +235,7 @@ source install/setup.bash
 ### Run the Policy Controller
 
 ```bash
-# Basic launch
+# Terminal 1: Launch the policy controller
 ros2 launch ogre_policy_controller policy_controller.launch.py
 
 # With custom model path
@@ -247,6 +247,19 @@ ros2 launch ogre_policy_controller policy_controller.launch.py \
     model_type:=jit \
     model_path:=/path/to/your/policy.pt
 ```
+
+### Test the Policy Controller
+
+```bash
+# Terminal 2: Send test velocity commands
+ros2 topic pub /cmd_vel geometry_msgs/msg/Twist \
+    "{linear: {x: 0.2, y: 0.0, z: 0.0}, angular: {x: 0.0, y: 0.0, z: 0.0}}" -r 10
+
+# Terminal 3: Watch wheel velocity output
+ros2 topic echo /wheel_velocities
+```
+
+You should see the policy outputting wheel velocities in response to the velocity command.
 
 ### Topics
 
