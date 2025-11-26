@@ -435,8 +435,55 @@ Check the USD file has proper physics setup. Use robot-only USD without scene el
 
 ## Related Projects
 
-- **ogre-slam**: ROS2 SLAM and navigation package for the real robot
-- **Isaac Lab**: GPU-accelerated robot learning framework
+### Project Ogre Ecosystem
+
+This repository is part of the **Project Ogre** ecosystem for mecanum drive robot navigation:
+
+| Repository | Purpose | Key Contents |
+|------------|---------|--------------|
+| **ogre-lab** (this repo) | RL policy training | Isaac Lab environment, trained models, ROS2 policy controller |
+| **[ogre-slam](https://github.com/protomota/ogre-slam)** | SLAM & Navigation | ROS2 package, Nav2 config, robot USD models, sensor drivers |
+
+### How They Work Together
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           TRAINING (ogre-lab)                               │
+│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐                  │
+│  │ Isaac Lab    │───▶│ Train Policy │───▶│ Export ONNX  │                  │
+│  │ Environment  │    │ (RSL-RL/PPO) │    │ & JIT Models │                  │
+│  └──────────────┘    └──────────────┘    └──────────────┘                  │
+│         │                                        │                          │
+│         │ uses                                   │ produces                 │
+│         ▼                                        ▼                          │
+│  ogre_robot.usd                          models/policy.onnx                 │
+│  (from ogre-slam)                        models/policy.pt                   │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                   │
+                                   │ deploy
+                                   ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                          DEPLOYMENT (ogre-slam)                             │
+│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐                  │
+│  │    Nav2      │───▶│   Policy     │───▶│ Robot/Isaac  │                  │
+│  │ (planning)   │    │  Controller  │    │     Sim      │                  │
+│  └──────────────┘    └──────────────┘    └──────────────┘                  │
+│                             │                                               │
+│                             │ runs                                          │
+│                             ▼                                               │
+│                      policy.onnx (from ogre-lab)                            │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Dependencies Between Repos
+
+- **ogre-lab → ogre-slam**: Uses `ogre_robot.usd` for training physics simulation
+- **ogre-slam → ogre-lab**: Uses trained `policy.onnx` for velocity command optimization
+
+### External Dependencies
+
+- **[Isaac Lab](https://github.com/isaac-sim/IsaacLab)**: GPU-accelerated robot learning framework (NVIDIA)
+- **[RSL-RL](https://github.com/leggedrobotics/rsl_rl)**: Reinforcement learning library for robotics
 
 ## License
 
