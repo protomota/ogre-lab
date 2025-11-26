@@ -16,7 +16,7 @@ This project trains a neural network policy to efficiently execute velocity comm
 - NVIDIA Isaac Sim 4.2+
 - Isaac Lab (installed at `~/isaac-lab/IsaacLab`)
 - RSL-RL for training
-- Robot USD model (`ogre.usd` from ogre-slam repo)
+- Robot USD model (`ogre_robot.usd` from ogre-slam repo - robot-only, no scene)
 
 ## Quick Start
 
@@ -83,7 +83,7 @@ cd ~/isaac-lab/IsaacLab
 ```
 
 **What happens during training:**
-1. Isaac Lab spawns 4096 parallel robot instances in GPU-accelerated simulation
+1. Isaac Lab spawns 1024 parallel robot instances in GPU-accelerated simulation
 2. Each robot receives random velocity commands (vx, vy, vtheta)
 3. The policy network outputs wheel velocities to track those commands
 4. Rewards are computed based on tracking accuracy, energy use, and smoothness
@@ -97,18 +97,28 @@ cd ~/isaac-lab/IsaacLab
 ```bash
 cd ~/isaac-lab/IsaacLab
 
-# Train with 4096 parallel environments for 1000 iterations (headless)
-./isaaclab.sh -p scripts/train.py \
+# Train with 1024 parallel environments for 1000 iterations (headless)
+./isaaclab.sh -p scripts/reinforcement_learning/rsl_rl/train.py \
     --task Isaac-Ogre-Navigation-Direct-v0 \
-    --num_envs 4096 \
+    --num_envs 1024 \
     --max_iterations 1000 \
     --headless
 
 # Train with visualization (slower but useful for debugging)
-./isaaclab.sh -p scripts/train.py \
+./isaaclab.sh -p scripts/reinforcement_learning/rsl_rl/train.py \
     --task Isaac-Ogre-Navigation-Direct-v0 \
     --num_envs 64 \
-    --max_iterations 500
+    --max_iterations 100
+```
+
+### Testing a Trained Model
+
+```bash
+cd ~/isaac-lab/IsaacLab
+./isaaclab.sh -p scripts/reinforcement_learning/rsl_rl/play.py \
+    --task Isaac-Ogre-Navigation-Direct-v0 \
+    --num_envs 16 \
+    --checkpoint logs/rsl_rl/ogre_navigation/<run_folder>/model_99.pt
 ```
 
 ### Training Output
@@ -135,11 +145,11 @@ Checkpoints saved to: `~/isaac-lab/IsaacLab/logs/rsl_rl/ogre_navigation/`
 ### Reward Function
 
 The policy is trained to maximize:
-- **Velocity tracking** (weight: 5.0): Minimize error between target and actual velocity
-- **XY velocity accuracy** (weight: 2.0): Extra reward for linear velocity tracking
-- **Angular velocity accuracy** (weight: 1.0): Reward for rotational velocity tracking
-- **Energy efficiency** (weight: -0.001): Penalize excessive wheel velocities
-- **Smoothness** (weight: -0.01): Penalize jerky motion
+- **Velocity tracking** (weight: 1.0): Minimize error between target and actual velocity
+- **XY velocity accuracy** (weight: 0.5): Extra reward for linear velocity tracking
+- **Angular velocity accuracy** (weight: 0.25): Reward for rotational velocity tracking
+- **Energy efficiency** (weight: -0.0001): Small penalty for excessive wheel velocities
+- **Smoothness** (weight: -0.001): Small penalty for jerky motion
 
 ### Robot Parameters
 
@@ -148,8 +158,9 @@ The policy is trained to maximize:
 | Wheel radius | 40mm |
 | Wheelbase | 95mm |
 | Track width | 205mm |
-| Max linear velocity | 8.0 m/s |
-| Max angular velocity | 6.0 rad/s |
+| Max linear velocity | 0.5 m/s |
+| Max angular velocity | 1.0 rad/s |
+| Action scale | 10.0 rad/s |
 
 ## Policy Deployment
 

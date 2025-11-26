@@ -42,7 +42,7 @@ from isaaclab.utils.math import sample_uniform
 # Robot configuration - matches your ogre.usd robot
 OGRE_MECANUM_CFG = ArticulationCfg(
     spawn=sim_utils.UsdFileCfg(
-        usd_path="/home/brad/ros2_ws/src/ogre-slam/usds/ogre.usd",
+        usd_path="/home/brad/ros2_ws/src/ogre-slam/usds/ogre_robot.usd",
         activate_contact_sensors=False,
     ),
     init_state=ArticulationCfg.InitialStateCfg(
@@ -79,7 +79,7 @@ class OgreNavigationEnvCfg(DirectRLEnvCfg):
     # Environment settings
     decimation = 4  # Physics steps per control step
     episode_length_s = 10.0  # Episode duration
-    action_scale = 50.0  # Scale for wheel velocity actions (rad/s)
+    action_scale = 10.0  # Scale for wheel velocity actions (rad/s) - reduced from 50
 
     # Observation and action dimensions
     observation_space = 10  # target_vel(3) + current_vel(3) + wheel_vel(4)
@@ -114,15 +114,16 @@ class OgreNavigationEnvCfg(DirectRLEnvCfg):
     )
 
     # Target velocity ranges (for random sampling during training)
-    max_lin_vel = 8.0  # m/s - max linear velocity
-    max_ang_vel = 6.0  # rad/s - max angular velocity
+    # Realistic values for small mecanum robot
+    max_lin_vel = 0.5  # m/s - max linear velocity (was 8.0 - way too fast!)
+    max_ang_vel = 1.0  # rad/s - max angular velocity (was 6.0)
 
-    # Reward scales
-    rew_scale_vel_tracking = 5.0  # Reward for accurate velocity tracking
-    rew_scale_vel_xy = 2.0  # Extra reward for xy velocity accuracy
-    rew_scale_ang_vel = 1.0  # Reward for angular velocity accuracy
-    rew_scale_energy = -0.001  # Penalty for energy use
-    rew_scale_smoothness = -0.01  # Penalty for jerky actions
+    # Reward scales - tuned for positive rewards when tracking well
+    rew_scale_vel_tracking = 1.0  # Reward for accurate velocity tracking
+    rew_scale_vel_xy = 0.5  # Extra reward for xy velocity accuracy
+    rew_scale_ang_vel = 0.25  # Reward for angular velocity accuracy
+    rew_scale_energy = -0.0001  # Small penalty for energy use
+    rew_scale_smoothness = -0.001  # Small penalty for jerky actions
 
 
 class OgreNavigationEnv(DirectRLEnv):
