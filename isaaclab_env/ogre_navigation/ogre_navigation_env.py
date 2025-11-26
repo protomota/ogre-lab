@@ -29,10 +29,11 @@ import torch
 from collections.abc import Sequence
 
 import isaaclab.sim as sim_utils
+from isaaclab.actuators import ImplicitActuatorCfg
 from isaaclab.assets import Articulation, ArticulationCfg
 from isaaclab.envs import DirectRLEnv, DirectRLEnvCfg
 from isaaclab.scene import InteractiveSceneCfg
-from isaaclab.sim import SimulationCfg
+from isaaclab.sim import PhysxCfg, SimulationCfg
 from isaaclab.sim.spawners.from_files import GroundPlaneCfg, spawn_ground_plane
 from isaaclab.utils import configclass
 from isaaclab.utils.math import sample_uniform
@@ -60,7 +61,7 @@ OGRE_MECANUM_CFG = ArticulationCfg(
         },
     ),
     actuators={
-        "wheels": sim_utils.ImplicitActuatorCfg(
+        "wheels": ImplicitActuatorCfg(
             joint_names_expr=[".*_joint"],
             velocity_limit=200.0,  # rad/s - high for simulation
             effort_limit=10.0,
@@ -89,6 +90,9 @@ class OgreNavigationEnvCfg(DirectRLEnvCfg):
     sim: SimulationCfg = SimulationCfg(
         dt=1/120,  # 120 Hz physics
         render_interval=decimation,
+        physx=PhysxCfg(
+            gpu_max_rigid_patch_count=2**21,  # Increased for many collisions
+        ),
     )
 
     # Robot configuration
@@ -104,8 +108,8 @@ class OgreNavigationEnvCfg(DirectRLEnvCfg):
 
     # Scene configuration
     scene: InteractiveSceneCfg = InteractiveSceneCfg(
-        num_envs=4096,  # Parallel environments for fast training
-        env_spacing=2.0,
+        num_envs=1024,  # Reduced for stability - can increase once working
+        env_spacing=3.0,  # Increased spacing to reduce collisions
         replicate_physics=True,
     )
 
