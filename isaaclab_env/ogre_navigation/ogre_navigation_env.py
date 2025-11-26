@@ -114,9 +114,8 @@ class OgreNavigationEnvCfg(DirectRLEnvCfg):
     )
 
     # Target velocity ranges (for random sampling during training)
-    # Realistic values for small mecanum robot
-    max_lin_vel = 0.5  # m/s - max linear velocity (was 8.0 - way too fast!)
-    max_ang_vel = 1.0  # rad/s - max angular velocity (was 6.0)
+    max_lin_vel = 8.0  # m/s - max linear velocity
+    max_ang_vel = 6.0  # rad/s - max angular velocity
 
     # Reward scales - tuned for positive rewards when tracking well
     rew_scale_vel_tracking = 1.0  # Reward for accurate velocity tracking

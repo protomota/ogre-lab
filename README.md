@@ -234,8 +234,8 @@ The policy is trained to maximize:
 | Wheel radius | 40mm |
 | Wheelbase | 95mm |
 | Track width | 205mm |
-| Max linear velocity | 0.5 m/s |
-| Max angular velocity | 1.0 rad/s |
+| Max linear velocity | 8.0 m/s |
+| Max angular velocity | 6.0 rad/s |
 | Action scale | 50.0 rad/s |
 
 ### Training Notes
