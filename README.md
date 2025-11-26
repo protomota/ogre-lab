@@ -218,7 +218,10 @@ The trained policy can be deployed as a ROS2 node that runs the neural network i
 # Symlink or copy to your ROS2 workspace
 ln -sf ~/ogre-lab/ros2_controller ~/ros2_ws/src/ogre_policy_controller
 
-# Install Python dependencies
+# IMPORTANT: Deactivate Isaac Lab conda env if active (uses different Python)
+conda deactivate
+
+# Install Python dependencies (in your ROS2 Python environment)
 pip install onnxruntime numpy
 
 # Build the package
@@ -226,6 +229,8 @@ cd ~/ros2_ws
 colcon build --packages-select ogre_policy_controller
 source install/setup.bash
 ```
+
+**Note:** The ROS2 package uses system Python, not the Isaac Lab conda environment. Make sure `onnxruntime` is installed in your ROS2 Python environment.
 
 ### Run the Policy Controller
 
