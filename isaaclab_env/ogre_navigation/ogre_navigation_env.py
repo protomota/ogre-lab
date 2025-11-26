@@ -79,7 +79,7 @@ class OgreNavigationEnvCfg(DirectRLEnvCfg):
     # Environment settings
     decimation = 4  # Physics steps per control step
     episode_length_s = 10.0  # Episode duration
-    action_scale = 10.0  # Scale for wheel velocity actions (rad/s) - reduced from 50
+    action_scale = 50.0  # Scale for wheel velocity actions (rad/s) - increased for proper output magnitude
 
     # Observation and action dimensions
     observation_space = 10  # target_vel(3) + current_vel(3) + wheel_vel(4)
@@ -175,8 +175,21 @@ class OgreNavigationEnv(DirectRLEnv):
         self.actions = self.action_scale * actions.clone()
 
     def _apply_action(self) -> None:
-        """Apply wheel velocity targets to the robot."""
-        self.robot.set_joint_velocity_target(self.actions, joint_ids=self._wheel_joint_ids)
+        """Apply wheel velocity targets to the robot.
+
+        Note: The front wheels (FL, FR) need to be negated to match the wheel joint
+        axis orientation in the training USD. This ensures the policy learns the
+        correct relationship between actions and robot motion.
+
+        Wheel order: [FL, FR, RL, RR] (indices 0, 1, 2, 3)
+        """
+        # Create corrected actions with proper wheel signs
+        corrected_actions = self.actions.clone()
+        # Negate front wheels to match joint axis orientation
+        corrected_actions[:, 0] = -corrected_actions[:, 0]  # FL
+        corrected_actions[:, 1] = -corrected_actions[:, 1]  # FR
+
+        self.robot.set_joint_velocity_target(corrected_actions, joint_ids=self._wheel_joint_ids)
 
     def _get_observations(self) -> dict:
         """Compute observations for the policy."""
@@ -184,6 +197,12 @@ class OgreNavigationEnv(DirectRLEnv):
         root_vel = self.robot.data.root_lin_vel_b  # Linear velocity in body frame
         root_ang_vel = self.robot.data.root_ang_vel_b  # Angular velocity in body frame
         joint_vel = self.robot.data.joint_vel[:, self._wheel_joint_ids]
+
+        # Correct wheel velocity signs to match action convention
+        # Front wheels (FL, FR) are negated in _apply_action, so negate observations too
+        corrected_joint_vel = joint_vel.clone()
+        corrected_joint_vel[:, 0] = -corrected_joint_vel[:, 0]  # FL
+        corrected_joint_vel[:, 1] = -corrected_joint_vel[:, 1]  # FR
 
         # Current body velocity (vx, vy, vtheta)
         current_vel = torch.cat([
@@ -196,7 +215,7 @@ class OgreNavigationEnv(DirectRLEnv):
         obs = torch.cat([
             self.target_vel,  # Target velocity command (3)
             current_vel,  # Current velocity (3)
-            joint_vel,  # Wheel velocities (4)
+            corrected_joint_vel,  # Wheel velocities (4) - corrected for sign convention
         ], dim=-1)
 
         return {"policy": obs}
