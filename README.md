@@ -20,7 +20,7 @@ This project trains a neural network policy to efficiently execute velocity comm
 - [x] Set up ogre-lab repo structure
 - [x] Train RL policy using RSL-RL
 - [x] Export trained policy for deployment (ONNX + JIT)
-- [ ] Create ROS2 node to run policy as Nav2 controller
+- [x] Create ROS2 node to run policy as Nav2 controller
 
 ## Prerequisites
 
@@ -208,14 +208,69 @@ The policy is trained to maximize:
 | Max angular velocity | 1.0 rad/s |
 | Action scale | 10.0 rad/s |
 
-## Policy Deployment (TODO)
+## Policy Deployment (ROS2)
 
-After training, the policy can be deployed as a ROS2 node that:
-1. Subscribes to `/cmd_vel` (geometry_msgs/Twist)
-2. Runs the trained neural network (ONNX or JIT)
-3. Publishes wheel velocities to motor controller
+The trained policy can be deployed as a ROS2 node that runs the neural network in real-time.
 
-See `ros2_controller/` for the deployment node (coming soon).
+### Install the ROS2 Package
+
+```bash
+# Symlink or copy to your ROS2 workspace
+ln -sf ~/ogre-lab/ros2_controller ~/ros2_ws/src/ogre_policy_controller
+
+# Install Python dependencies
+pip install onnxruntime numpy
+
+# Build the package
+cd ~/ros2_ws
+colcon build --packages-select ogre_policy_controller
+source install/setup.bash
+```
+
+### Run the Policy Controller
+
+```bash
+# Basic launch
+ros2 launch ogre_policy_controller policy_controller.launch.py
+
+# With custom model path
+ros2 launch ogre_policy_controller policy_controller.launch.py \
+    model_path:=/path/to/your/policy.onnx
+
+# Use JIT model instead of ONNX
+ros2 launch ogre_policy_controller policy_controller.launch.py \
+    model_type:=jit \
+    model_path:=/path/to/your/policy.pt
+```
+
+### Topics
+
+| Topic | Type | Description |
+|-------|------|-------------|
+| `/cmd_vel` (sub) | geometry_msgs/Twist | Velocity commands from Nav2 |
+| `/odom` (sub) | nav_msgs/Odometry | Current robot velocity feedback |
+| `/joint_states` (sub) | sensor_msgs/JointState | Current wheel velocities |
+| `/wheel_velocities` (pub) | std_msgs/Float32MultiArray | Wheel velocity targets [fl, fr, rl, rr] |
+
+### Parameters
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `model_path` | auto-detect | Path to ONNX or JIT model |
+| `model_type` | "onnx" | Model format: "onnx" or "jit" |
+| `action_scale` | 10.0 | Wheel velocity scaling factor |
+| `max_lin_vel` | 0.5 | Max linear velocity (m/s) |
+| `max_ang_vel` | 1.0 | Max angular velocity (rad/s) |
+| `control_frequency` | 30.0 | Control loop rate (Hz) |
+
+### Integration with Nav2
+
+The policy controller subscribes to `/cmd_vel` which Nav2's local planner publishes to. To use the trained policy instead of the default controller:
+
+1. Launch the policy controller node
+2. The node will receive velocity commands from Nav2
+3. The neural network outputs optimal wheel velocities
+4. Your motor controller subscribes to `/wheel_velocities`
 
 ## File Structure
 
@@ -235,7 +290,16 @@ ogre-lab/
 ├── scripts/
 │   ├── train_ogre_navigation.sh  # Training launcher
 │   └── export_policy.sh          # Export helper script
-├── ros2_controller/              # ROS2 deployment node (TODO)
+├── ros2_controller/              # ROS2 deployment package
+│   ├── package.xml
+│   ├── setup.py
+│   ├── config/
+│   │   └── policy_controller_params.yaml
+│   ├── launch/
+│   │   └── policy_controller.launch.py
+│   ├── models/                   # Copy of exported models
+│   └── ogre_policy_controller/
+│       └── policy_controller_node.py
 └── docs/                         # Additional documentation
 ```
 

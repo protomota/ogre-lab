@@ -1,0 +1,24 @@
+ogre_policy_controller:
+  ros__parameters:
+    # Path to trained model (leave empty to auto-find in models/ directory)
+    model_path: ""
+
+    # Model type: 'onnx' or 'jit'
+    model_type: "onnx"
+
+    # Action scale - must match training config
+    action_scale: 10.0
+
+    # Velocity limits - must match training config
+    max_lin_vel: 0.5
+    max_ang_vel: 1.0
+
+    # Control loop frequency (Hz)
+    control_frequency: 30.0
+
+    # Wheel joint names in order: [fl, fr, rl, rr]
+    wheel_joint_names:
+      - "fl_joint"
+      - "fr_joint"
+      - "rl_joint"
+      - "rr_joint"
