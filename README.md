@@ -18,32 +18,68 @@ This project trains a neural network policy to efficiently execute velocity comm
 - RSL-RL for training
 - Robot USD model (`ogre.usd` from ogre-slam repo)
 
-## Installation
-
-1. **Symlink environment into Isaac Lab:**
+## Quick Start
 
 ```bash
-# Create symlink to ogre_navigation in Isaac Lab's direct environments
+# 1. Symlink the environment into Isaac Lab
+ln -sf ~/ogre-lab/isaaclab_env/ogre_navigation \
+  ~/isaac-lab/IsaacLab/source/isaaclab_tasks/isaaclab_tasks/direct/ogre_navigation
+
+# 2. Run training
+cd ~/isaac-lab/IsaacLab
+./scripts/train_ogre_navigation.sh
+```
+
+## Installation
+
+### Step 1: Symlink Environment into Isaac Lab
+
+Isaac Lab discovers environments by looking in its `isaaclab_tasks/direct/` directory. Rather than copying files, we create a symbolic link so that changes in ogre-lab are automatically reflected in Isaac Lab.
+
+```bash
 ln -sf ~/ogre-lab/isaaclab_env/ogre_navigation \
   ~/isaac-lab/IsaacLab/source/isaaclab_tasks/isaaclab_tasks/direct/ogre_navigation
 ```
 
-2. **Register the environment** (if not already done):
+**What this does:**
+- Creates a symbolic link named `ogre_navigation` inside Isaac Lab's direct environments folder
+- Points to our environment code in `~/ogre-lab/isaaclab_env/ogre_navigation`
+- The `-s` flag creates a symbolic (soft) link
+- The `-f` flag forces overwrite if a link already exists
 
-Add to `~/isaac-lab/IsaacLab/source/isaaclab_tasks/isaaclab_tasks/direct/__init__.py`:
+**Why symlink instead of copy?**
+- Edit code in one place (ogre-lab), changes apply everywhere
+- Keep ogre-lab as the source of truth for version control
+- Easy to update or remove without touching Isaac Lab installation
+
+### Step 2: Register the Environment
+
+Isaac Lab needs to know about our environment. Add this import to Isaac Lab's direct environments init file:
+
+**File:** `~/isaac-lab/IsaacLab/source/isaaclab_tasks/isaaclab_tasks/direct/__init__.py`
 
 ```python
 from . import ogre_navigation
 ```
 
-## Training
+This tells Python to load our `ogre_navigation` module when Isaac Lab starts, which triggers the Gym environment registration in our `__init__.py`.
 
-### Quick Start
+### Step 3: Run Training
 
 ```bash
 cd ~/isaac-lab/IsaacLab
 ./scripts/train_ogre_navigation.sh
 ```
+
+**What happens during training:**
+1. Isaac Lab spawns 4096 parallel robot instances in GPU-accelerated simulation
+2. Each robot receives random velocity commands (vx, vy, vtheta)
+3. The policy network outputs wheel velocities to track those commands
+4. Rewards are computed based on tracking accuracy, energy use, and smoothness
+5. PPO algorithm updates the policy every 24 steps
+6. After 1000 iterations, a trained policy checkpoint is saved
+
+## Training
 
 ### Custom Training
 
