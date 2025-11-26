@@ -192,6 +192,13 @@ source install/setup.bash
 
 Pre-exported models are available in `models/` directory.
 
+### Step 4: Test with Isaac Sim or Real Robot
+
+See the **[ogre-slam README](https://github.com/protomota/ogre-slam#using-the-trained-rl-policy)** for instructions on testing the deployed policy with:
+- Isaac Sim simulation
+- Real robot hardware
+- Nav2 integration
+
 ## Environment Details
 
 ### Observation Space (10 dimensions)
