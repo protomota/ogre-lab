@@ -156,16 +156,34 @@ Running `play.py` automatically exports the model to deployment formats:
 conda activate env_isaaclab
 cd ~/isaac-lab/IsaacLab
 
+# Find your latest training run
+ls -lt logs/rsl_rl/ogre_navigation/ | head -3
+
+# Export (replace <run_folder> with actual folder name, e.g., 2025-11-26_10-22-58)
 ./isaaclab.sh -p scripts/reinforcement_learning/rsl_rl/play.py \
     --task Isaac-Ogre-Navigation-Direct-v0 \
     --num_envs 1 \
-    --checkpoint logs/rsl_rl/ogre_navigation/<run_folder>/model_99.pt \
+    --checkpoint logs/rsl_rl/ogre_navigation/<run_folder>/model_999.pt \
     --headless
 ```
 
 This creates an `exported/` folder with:
 - `policy.pt` - JIT compiled PyTorch model
 - `policy.onnx` - ONNX format for cross-platform deployment
+
+### Copy Models to Deployment Location
+
+```bash
+# Copy exported models to ogre-lab and ROS2 package
+cp logs/rsl_rl/ogre_navigation/<run_folder>/exported/policy.onnx ~/ogre-lab/models/
+cp logs/rsl_rl/ogre_navigation/<run_folder>/exported/policy.pt ~/ogre-lab/models/
+
+# Rebuild ROS2 package to pick up new models
+conda deactivate  # Exit Isaac Lab conda env
+cd ~/ros2_ws
+colcon build --packages-select ogre_policy_controller --symlink-install
+source install/setup.bash
+```
 
 Pre-exported models are available in `models/` directory.
 
