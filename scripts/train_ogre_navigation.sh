@@ -12,7 +12,7 @@ echo "Max iterations: $MAX_ITERATIONS"
 echo ""
 
 # Run training with RSL-RL
-./isaaclab.sh -p scripts/train.py \
+./isaaclab.sh -p scripts/reinforcement_learning/rsl_rl/train.py \
     --task Isaac-Ogre-Navigation-Direct-v0 \
     --num_envs $NUM_ENVS \
     --max_iterations $MAX_ITERATIONS \

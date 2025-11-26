@@ -25,7 +25,10 @@ This project trains a neural network policy to efficiently execute velocity comm
 ln -sf ~/ogre-lab/isaaclab_env/ogre_navigation \
   ~/isaac-lab/IsaacLab/source/isaaclab_tasks/isaaclab_tasks/direct/ogre_navigation
 
-# 2. Run training
+# 2. Activate Isaac Lab conda environment
+conda activate env_isaaclab
+
+# 3. Run training
 cd ~/isaac-lab/IsaacLab
 ./scripts/train_ogre_navigation.sh
 ```
@@ -64,7 +67,15 @@ from . import ogre_navigation
 
 This tells Python to load our `ogre_navigation` module when Isaac Lab starts, which triggers the Gym environment registration in our `__init__.py`.
 
-### Step 3: Run Training
+### Step 3: Activate Isaac Lab Environment
+
+Isaac Lab requires its own conda environment with Isaac Sim Python bindings:
+
+```bash
+conda activate env_isaaclab
+```
+
+### Step 4: Run Training
 
 ```bash
 cd ~/isaac-lab/IsaacLab
