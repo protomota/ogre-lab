@@ -150,36 +150,65 @@ ls ~/isaac-lab/IsaacLab/logs/rsl_rl/ogre_navigation/
 
 ## Exporting for Deployment
 
-Running `play.py` automatically exports the model to deployment formats:
+Running `play.py` automatically exports the model to deployment formats.
+
+### Step 1: Find Your Training Run
+
+Training runs are saved with timestamps like `2025-11-26_13-34-55`:
 
 ```bash
 conda activate env_isaaclab
 cd ~/isaac-lab/IsaacLab
 
-# Find your latest training run
-ls -lt logs/rsl_rl/ogre_navigation/ | head -3
+# List training runs (newest first)
+ls -lt logs/rsl_rl/ogre_navigation/
 
-# Export (replace <run_folder> with actual folder name, e.g., 2025-11-26_10-22-58)
+# Example output:
+# drwxrwxr-x 4 brad brad 4096 Nov 26 15:09 2025-11-26_13-34-55  <-- latest
+# drwxrwxr-x 5 brad brad 4096 Nov 26 12:16 2025-11-26_10-38-02
+# drwxrwxr-x 5 brad brad 4096 Nov 26 10:32 2025-11-26_10-22-58
+
+# Check what models are in a run
+ls logs/rsl_rl/ogre_navigation/2025-11-26_13-34-55/
+# Shows: model_0.pt, model_100.pt, ..., model_999.pt
+```
+
+### Step 2: Export the Model
+
+Use the **full path** with your run folder name:
+
+```bash
+# Example with run folder "2025-11-26_13-34-55"
 ./isaaclab.sh -p scripts/reinforcement_learning/rsl_rl/play.py \
     --task Isaac-Ogre-Navigation-Direct-v0 \
     --num_envs 1 \
-    --checkpoint logs/rsl_rl/ogre_navigation/<run_folder>/model_999.pt \
+    --checkpoint logs/rsl_rl/ogre_navigation/2025-11-26_13-34-55/model_999.pt \
     --headless
 ```
 
-This creates an `exported/` folder with:
-- `policy.pt` - JIT compiled PyTorch model
-- `policy.onnx` - ONNX format for cross-platform deployment
+This creates an `exported/` folder inside the run directory:
+```
+logs/rsl_rl/ogre_navigation/2025-11-26_13-34-55/
+├── model_999.pt          # Training checkpoint
+└── exported/
+    ├── policy.pt         # JIT compiled PyTorch model
+    └── policy.onnx       # ONNX format for deployment
+```
 
-### Copy Models to Deployment Location
+### Step 3: Copy Models to Deployment Location
 
 ```bash
-# Copy exported models to ogre-lab and ROS2 package
-cp logs/rsl_rl/ogre_navigation/<run_folder>/exported/policy.onnx ~/ogre-lab/models/
-cp logs/rsl_rl/ogre_navigation/<run_folder>/exported/policy.pt ~/ogre-lab/models/
+# Still in ~/isaac-lab/IsaacLab with your run folder name
+cp logs/rsl_rl/ogre_navigation/2025-11-26_13-34-55/exported/policy.onnx ~/ogre-lab/models/
+cp logs/rsl_rl/ogre_navigation/2025-11-26_13-34-55/exported/policy.pt ~/ogre-lab/models/
+```
 
-# Rebuild ROS2 package to pick up new models
-conda deactivate  # Exit Isaac Lab conda env
+### Step 4: Rebuild ROS2 Package
+
+```bash
+# Exit Isaac Lab conda env (uses different Python)
+conda deactivate
+
 cd ~/ros2_ws
 colcon build --packages-select ogre_policy_controller --symlink-install
 source install/setup.bash
