@@ -294,6 +294,17 @@ class PolicyControllerNode(Node):
         # Scale actions to wheel velocities (rad/s)
         wheel_velocities = actions * self.action_scale
 
+        # Debug logging (every 30 iterations = 1 second)
+        if not hasattr(self, '_debug_counter'):
+            self._debug_counter = 0
+        self._debug_counter += 1
+        if self._debug_counter % 30 == 0:
+            self.get_logger().info(
+                f'Target: [{self.target_vel[0]:.3f}, {self.target_vel[1]:.3f}, {self.target_vel[2]:.3f}] | '
+                f'Raw actions: [{actions[0]:.4f}, {actions[1]:.4f}, {actions[2]:.4f}, {actions[3]:.4f}] | '
+                f'Wheel vel: [{wheel_velocities[0]:.2f}, {wheel_velocities[1]:.2f}, {wheel_velocities[2]:.2f}, {wheel_velocities[3]:.2f}]'
+            )
+
         # Publish based on output mode
         if self.output_mode == 'twist':
             # Convert wheel velocities back to Twist

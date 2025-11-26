@@ -206,7 +206,11 @@ The policy is trained to maximize:
 | Track width | 205mm |
 | Max linear velocity | 0.5 m/s |
 | Max angular velocity | 1.0 rad/s |
-| Action scale | 10.0 rad/s |
+| Action scale | 50.0 rad/s |
+
+### Training Notes
+
+The training environment applies wheel sign corrections to match the wheel joint axis orientations in the USD model. The front wheels (FL, FR) are negated in both actions and observations to ensure consistent behavior between training and deployment. This allows the policy to learn that positive wheel velocities = forward motion for all wheels.
 
 ## Policy Deployment (ROS2)
 

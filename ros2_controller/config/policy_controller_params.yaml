@@ -15,8 +15,8 @@ ogre_policy_controller:
     input_topic: "/policy_cmd_vel_in"
     output_topic: "/cmd_vel"
 
-    # Action scale - must match training config
-    action_scale: 10.0
+    # Action scale - must match training config (50.0 for properly trained model)
+    action_scale: 50.0
 
     # Velocity limits - must match training config
     max_lin_vel: 0.5
