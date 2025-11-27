@@ -125,6 +125,38 @@ Learning iteration 50/100
 - **Negative reward** = reward function needs tuning
 - **Short episodes** = robots falling or crashing
 
+### Monitoring Training with TensorBoard
+
+When training a policy, you can monitor progress in real-time using TensorBoard.
+
+**Step 1:** Open a new terminal (keep your training running in the current one)
+
+**Step 2:** Run these commands:
+
+```bash
+source ~/miniconda3/etc/profile.d/conda.sh
+conda activate env_isaaclab
+tensorboard --logdir ~/isaac-lab/IsaacLab/logs/rsl_rl/ogre_navigation/
+```
+
+**Step 3:** Open your web browser and go to: http://localhost:6006
+
+**What you'll see:**
+
+The TensorBoard dashboard shows several graphs. The most important ones for your training:
+
+1. **Train/mean_reward** - This is your main progress indicator. It should go up over time. Higher is better.
+2. **Train/mean_episode_length** - How long episodes last. For 10-second episodes, this should approach 300 steps (at 30 Hz) as the policy improves.
+3. **Loss/value_function** - Should generally decrease as the critic learns.
+4. **Loss/surrogate** - Policy loss, will fluctuate but should stabilize.
+
+**Tips:**
+- Click the refresh button (⟳) in TensorBoard to see latest data
+- Use the smoothing slider on the left to make noisy graphs easier to read
+- You can zoom in on graphs by clicking and dragging
+
+Training logs are saved in timestamped directories under `logs/rsl_rl/ogre_navigation/`.
+
 ## Testing and Exporting a Trained Model
 
 Running `play.py` both visualizes the policy AND exports it to ONNX/JIT formats for deployment.
