@@ -13,6 +13,12 @@ def generate_launch_description():
     pkg_dir = get_package_share_directory('ogre_policy_controller')
 
     # Declare launch arguments
+    use_policy_arg = DeclareLaunchArgument(
+        'use_policy',
+        default_value='false',
+        description='Use learned policy (true) or pass-through mode (false)'
+    )
+
     model_path_arg = DeclareLaunchArgument(
         'model_path',
         default_value=os.path.join(pkg_dir, 'models', 'policy.onnx'),
@@ -58,6 +64,7 @@ def generate_launch_description():
         parameters=[
             LaunchConfiguration('params_file'),
             {
+                'use_policy': LaunchConfiguration('use_policy'),
                 'model_path': LaunchConfiguration('model_path'),
                 'model_type': LaunchConfiguration('model_type'),
                 'output_mode': LaunchConfiguration('output_mode'),
@@ -72,6 +79,7 @@ def generate_launch_description():
     )
 
     return LaunchDescription([
+        use_policy_arg,
         model_path_arg,
         model_type_arg,
         output_mode_arg,

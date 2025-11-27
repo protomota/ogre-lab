@@ -54,6 +54,7 @@ class PolicyControllerNode(Node):
         super().__init__('ogre_policy_controller')
 
         # Declare parameters
+        self.declare_parameter('use_policy', False)  # If False, pass through Twist directly
         self.declare_parameter('model_path', '')
         self.declare_parameter('model_type', 'onnx')  # 'onnx' or 'jit'
         self.declare_parameter('action_scale', 10.0)
@@ -71,6 +72,7 @@ class PolicyControllerNode(Node):
         self.declare_parameter('track_width', 0.205)   # 205mm
 
         # Get parameters
+        self.use_policy = self.get_parameter('use_policy').get_parameter_value().bool_value
         model_path = self.get_parameter('model_path').get_parameter_value().string_value
         model_type = self.get_parameter('model_type').get_parameter_value().string_value
         self.action_scale = self.get_parameter('action_scale').get_parameter_value().double_value
@@ -88,14 +90,14 @@ class PolicyControllerNode(Node):
         self.track_width = self.get_parameter('track_width').get_parameter_value().double_value
         self.L = (self.wheelbase + self.track_width) / 2.0
 
-        # Find model if not specified
-        if not model_path:
-            model_path = self._find_default_model(model_type)
-
-        # Load the policy model
+        # Load the policy model only if use_policy is True
         self.model = None
         self.model_type = model_type
-        self._load_model(model_path, model_type)
+        if self.use_policy:
+            # Find model if not specified
+            if not model_path:
+                model_path = self._find_default_model(model_type)
+            self._load_model(model_path, model_type)
 
         # State variables
         self.target_vel = np.zeros(3, dtype=np.float32)  # vx, vy, vtheta
@@ -145,12 +147,15 @@ class PolicyControllerNode(Node):
         )
 
         self.get_logger().info(f'Ogre Policy Controller started')
-        self.get_logger().info(f'  Model: {model_path}')
-        self.get_logger().info(f'  Type: {model_type}')
-        self.get_logger().info(f'  Output mode: {self.output_mode}')
+        self.get_logger().info(f'  Use policy: {self.use_policy}')
+        if self.use_policy:
+            self.get_logger().info(f'  Model: {model_path}')
+            self.get_logger().info(f'  Type: {model_type}')
+            self.get_logger().info(f'  Action scale: {self.action_scale}')
+        else:
+            self.get_logger().info(f'  Mode: Pass-through (Twist in -> Twist out)')
         self.get_logger().info(f'  Input topic: {input_topic}')
         self.get_logger().info(f'  Output topic: {output_topic}')
-        self.get_logger().info(f'  Action scale: {self.action_scale}')
         self.get_logger().info(f'  Control frequency: {control_freq} Hz')
 
     def _find_default_model(self, model_type: str) -> str:
@@ -261,8 +266,18 @@ class PolicyControllerNode(Node):
             w_fl, w_fr, w_rl, w_rr = wheel angular velocities (rad/s)
             R = wheel radius
             L = (wheelbase + track_width) / 2
+
+        The policy outputs wheel velocities with sign corrections already applied
+        (right wheels fr/rr negated in training), so we apply inverse corrections
+        before forward kinematics to get actual joint velocities.
         """
-        w_fl, w_fr, w_rl, w_rr = wheel_vel
+        # Apply sign corrections: negate right wheels (fr, rr) to convert
+        # from policy space (corrected) to actual joint velocities
+        w_fl = wheel_vel[0]
+        w_fr = -wheel_vel[1]  # Negate to get actual joint velocity
+        w_rl = wheel_vel[2]
+        w_rr = -wheel_vel[3]  # Negate to get actual joint velocity
+
         R = self.wheel_radius
         L = self.L
 
@@ -287,6 +302,19 @@ class PolicyControllerNode(Node):
         if time_since_cmd > 0.5:
             self.target_vel[:] = 0.0
 
+        # Pass-through mode: just forward the Twist directly
+        if not self.use_policy:
+            twist_msg = Twist()
+            twist_msg.linear.x = float(self.target_vel[0])
+            twist_msg.linear.y = float(self.target_vel[1])
+            twist_msg.linear.z = 0.0
+            twist_msg.angular.x = 0.0
+            twist_msg.angular.y = 0.0
+            twist_msg.angular.z = float(self.target_vel[2])
+            self.output_pub.publish(twist_msg)
+            return
+
+        # Policy mode: run the learned policy
         # Build observation and run policy
         obs = self._build_observation()
         actions = self._run_policy(obs)
