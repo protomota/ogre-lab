@@ -211,18 +211,14 @@ logs/rsl_rl/ogre_navigation/2025-11-26_13-34-55/
 ### Step 3: Deploy to ROS2
 
 ```bash
-# Copy exported models
+# Copy exported models to ogre-lab models directory
 cp logs/rsl_rl/ogre_navigation/2025-11-26_13-34-55/exported/policy.onnx ~/ogre-lab/models/
 cp logs/rsl_rl/ogre_navigation/2025-11-26_13-34-55/exported/policy.pt ~/ogre-lab/models/
-
-# Rebuild ROS2 package (exit conda first - uses different Python)
-conda deactivate
-cd ~/ros2_ws
-colcon build --packages-select ogre_policy_controller --symlink-install
-source install/setup.bash
 ```
 
 Pre-exported models are available in `models/` directory.
+
+For ROS2 package setup and testing instructions, see the **[ogre-slam README](https://github.com/protomota/ogre-slam#using-the-trained-rl-policy)**.
 
 ### Step 4: Test with Isaac Sim or Real Robot
 
