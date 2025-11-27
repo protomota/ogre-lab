@@ -268,7 +268,14 @@ The policy is trained to maximize:
 
 ### Training Notes
 
-The training environment applies wheel sign corrections to match the wheel joint axis orientations in the USD model. The front wheels (FL, FR) are negated in both actions and observations to ensure consistent behavior between training and deployment. This allows the policy to learn that positive wheel velocities = forward motion for all wheels.
+**Wheel Sign Corrections:**
+The training environment applies wheel sign corrections to match the wheel joint axis orientations in the USD model. The **right-side wheels (FR, RR)** are negated in both actions and observations. This is because the joint axes for right wheels point in the opposite direction in the USD model.
+
+- In `_apply_action()`: FR (index 1) and RR (index 3) velocities are negated before applying
+- In `_get_observations()`: FR and RR wheel velocities are negated for consistency
+- In `policy_controller_node.py`: Inverse corrections applied in `_wheel_vel_to_twist()`
+
+This ensures the policy learns a consistent representation where positive wheel velocities mean "forward rotation" for all wheels, regardless of joint axis orientation.
 
 ## Policy Deployment (ROS2)
 
@@ -297,15 +304,20 @@ source install/setup.bash
 ### Run the Policy Controller
 
 ```bash
-# Terminal 1: Launch the policy controller
+# Terminal 1: Launch in pass-through mode (default, no model needed)
 ros2 launch ogre_policy_controller policy_controller.launch.py
+
+# Launch with policy enabled
+ros2 launch ogre_policy_controller policy_controller.launch.py use_policy:=true
 
 # With custom model path
 ros2 launch ogre_policy_controller policy_controller.launch.py \
+    use_policy:=true \
     model_path:=/path/to/your/policy.onnx
 
 # Use JIT model instead of ONNX
 ros2 launch ogre_policy_controller policy_controller.launch.py \
+    use_policy:=true \
     model_type:=jit \
     model_path:=/path/to/your/policy.pt
 ```
@@ -351,6 +363,7 @@ The policy controller supports two output modes:
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
+| `use_policy` | false | Enable policy (true) or pass-through mode (false) |
 | `model_path` | auto-detect | Path to ONNX or JIT model |
 | `model_type` | "onnx" | Model format: "onnx" or "jit" |
 | `output_mode` | "twist" | Output mode: "twist" or "wheel_velocities" |
