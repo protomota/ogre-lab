@@ -315,6 +315,18 @@ class PolicyControllerNode(Node):
             return
 
         # Policy mode: run the learned policy
+        # Short-circuit: if target velocity is near zero, output zero (don't run policy)
+        target_magnitude = np.sqrt(np.sum(self.target_vel ** 2))
+        if target_magnitude < 0.01:  # Threshold for "zero" command
+            if self.output_mode == 'twist':
+                twist_msg = Twist()  # All zeros by default
+                self.output_pub.publish(twist_msg)
+            else:
+                msg = Float32MultiArray()
+                msg.data = [0.0, 0.0, 0.0, 0.0]
+                self.output_pub.publish(msg)
+            return
+
         # Build observation and run policy
         obs = self._build_observation()
         actions = self._run_policy(obs)
