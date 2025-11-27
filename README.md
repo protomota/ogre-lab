@@ -136,8 +136,11 @@ When training a policy, you can monitor progress in real-time using TensorBoard.
 ```bash
 source ~/miniconda3/etc/profile.d/conda.sh
 conda activate env_isaaclab
-tensorboard --logdir ~/isaac-lab/IsaacLab/logs/rsl_rl/ogre_navigation/
+tensorboard --logdir ~/isaac-lab/IsaacLab/logs/rsl_rl/ogre_navigation/ \
+    --reload_multifile=true --reload_interval=5
 ```
+
+**Note:** The `--reload_multifile=true --reload_interval=5` flags ensure TensorBoard properly tracks updates from RSL-RL's multi-file logging structure.
 
 **Step 3:** Open your web browser and go to: http://localhost:6006
 
@@ -262,9 +265,9 @@ The policy is trained to maximize:
 | Wheel radius | 40mm |
 | Wheelbase | 95mm |
 | Track width | 205mm |
-| Max linear velocity | 8.0 m/s |
-| Max angular velocity | 6.0 rad/s |
-| Action scale | 50.0 rad/s |
+| Max linear velocity | 1.0 m/s |
+| Max angular velocity | 2.0 rad/s |
+| Action scale | 25.0 rad/s |
 
 ### Training Notes
 
@@ -369,9 +372,9 @@ The policy controller supports two output modes:
 | `output_mode` | "twist" | Output mode: "twist" or "wheel_velocities" |
 | `input_topic` | "/policy_cmd_vel_in" | Input velocity command topic |
 | `output_topic` | "/cmd_vel" | Output topic (Twist or Float32MultiArray) |
-| `action_scale` | 10.0 | Wheel velocity scaling factor |
-| `max_lin_vel` | 0.5 | Max linear velocity (m/s) |
-| `max_ang_vel` | 1.0 | Max angular velocity (rad/s) |
+| `action_scale` | 25.0 | Wheel velocity scaling factor (must match training) |
+| `max_lin_vel` | 1.0 | Max linear velocity (m/s, must match training) |
+| `max_ang_vel` | 2.0 | Max angular velocity (rad/s, must match training) |
 | `control_frequency` | 30.0 | Control loop rate (Hz) |
 | `wheel_radius` | 0.040 | Wheel radius in meters |
 | `wheelbase` | 0.095 | Front-rear axle distance in meters |
