@@ -328,6 +328,9 @@ class PolicyControllerNode(Node):
         obs = self._build_observation()
         actions = self._run_policy(obs)
 
+        # Clip actions to [-1, 1] range (RSL-RL actor outputs unbounded values)
+        actions = np.clip(actions, -1.0, 1.0)
+
         # Scale actions to wheel velocities (rad/s)
         wheel_velocities = actions * self.action_scale
 
