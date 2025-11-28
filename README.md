@@ -347,7 +347,7 @@ Robot moves BACKWARD instead of forward ✗
 
 ## Policy Deployment (ROS2)
 
-The trained policy is deployed using the `ogre_policy_controller` ROS2 package, which is now part of **ogre-slam**.
+The trained policy is deployed using the `ogre_policy_controller` ROS2 package in **ogre-slam**.
 
 See the [ogre-slam README](https://github.com/protomota/ogre-slam#using-the-trained-rl-policy) for deployment instructions.
 
