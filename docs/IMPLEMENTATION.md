@@ -35,16 +35,18 @@ Isaac Lab's `Articulation` class finds joints by name, then uses PhysX to apply 
 
 ## Wheel Sign Corrections
 
-The USD robot has inverted joint axes for right-side wheels (FR and RR). The training environment applies sign corrections so the policy learns in a normalized space where `[+,+,+,+] = forward`:
+The USD robot has ALL wheel joint axes inverted (negative velocity = forward motion). The training environment applies sign corrections so the policy learns in a normalized space where `[+,+,+,+] = forward`:
 
 ```python
 def _apply_action(self) -> None:
-    """Apply wheel velocity targets to the robot."""
-    corrected_actions = self.actions.clone()
-    # Negate right wheels to match joint axis orientation
-    corrected_actions[:, 1] *= -1  # FR
-    corrected_actions[:, 3] *= -1  # RR
+    """Apply wheel velocity targets to the robot.
 
+    The USD has ALL wheel joint axes inverted - negative velocity = forward.
+    We negate ALL wheel velocities so the policy can output positive values
+    for forward motion (normalized action space: [+,+,+,+] = forward).
+    """
+    corrected_actions = self.actions.clone()
+    corrected_actions *= -1  # Negate ALL wheels
     self.robot.set_joint_velocity_target(corrected_actions, joint_ids=self._wheel_joint_ids)
 ```
 
@@ -53,15 +55,36 @@ The same correction is applied to observations so the policy sees consistent dat
 ```python
 def _get_observations(self) -> dict:
     joint_vel = self.robot.data.joint_vel[:, self._wheel_joint_ids].clone()
-
-    # Correct wheel velocity signs to match action convention
-    joint_vel[:, 1] *= -1  # FR
-    joint_vel[:, 3] *= -1  # RR
+    joint_vel *= -1  # Negate ALL wheel velocities to match action space
 ```
 
 This ensures the policy learns: **positive wheel velocity = forward motion** for all wheels.
 
-**Important:** The Isaac Sim action graph must also negate FR/RR wheel velocities during deployment to match the training environment.
+**Important:** The Isaac Sim action graph must also negate ALL wheel velocities during deployment:
+```
+wheel_fl = -(vx - vy - vtheta * L)
+wheel_fr = -(vx + vy + vtheta * L)
+wheel_rl = -(vx + vy - vtheta * L)
+wheel_rr = -(vx - vy + vtheta * L)
+```
+
+## How Velocity Tracking Training Works
+
+**This is NOT goal-navigation training.** The robots are NOT all driving toward a target position.
+
+Instead, each robot receives a **random target velocity** (vx, vy, vtheta) at the start of each episode:
+- vx: forward/backward speed (-1.0 to +1.0 m/s)
+- vy: left/right strafe speed (-1.0 to +1.0 m/s)
+- vtheta: rotation speed (-2.0 to +2.0 rad/s)
+
+**Expected training behavior:**
+- Each robot moves in a DIFFERENT direction based on its random target
+- Some go forward, some backward, some strafe, some rotate
+- The policy learns: "given target velocity X, output wheel velocities Y"
+- Reward = how well current velocity matches target velocity
+
+**Why this is useful:**
+When deployed, Nav2 sends velocity commands (Twist messages). The policy converts these to optimal wheel velocities, compensating for the robot's dynamics better than simple inverse kinematics.
 
 ## Training Configuration
 
@@ -178,68 +201,130 @@ policy output [-1, 1]    →    policy output [-1, 1]
 - Policy not trained long enough
 - Observation/action space mismatch between training and deployment
 
-## Manual Model Export (Reference)
+## Export and Deploy Scripts
 
-If you need to manually find and copy models instead of using `./scripts/deploy_model.sh`:
+### Export Script (`scripts/export_policy.sh`)
 
-### Finding Training Runs
-
-Training runs are saved with timestamps in `~/isaac-lab/IsaacLab/logs/rsl_rl/ogre_navigation/`:
+Exports the trained policy to ONNX and JIT formats by running `play.py`:
 
 ```bash
-# List training runs (newest first)
-ls -lt ~/isaac-lab/IsaacLab/logs/rsl_rl/ogre_navigation/
+cd ~/ogre-lab
 
-# Example output:
-# drwxrwxr-x 4 brad brad 4096 Nov 28 08:44 2025-11-28_07-01-52  <-- most recent
-# drwxrwxr-x 5 brad brad 4096 Nov 27 19:02 2025-11-27_18-30-00
+# Export latest model with visualization (16 robots)
+./scripts/export_policy.sh
+
+# Export latest model headless (faster)
+./scripts/export_policy.sh --headless
+
+# Export specific training run
+./scripts/export_policy.sh 2025-11-28_10-14-31
+
+# Export specific run headless
+./scripts/export_policy.sh 2025-11-28_10-14-31 --headless
 ```
 
-### Exporting a Specific Checkpoint
+**What it does:**
+1. Finds the latest training run in `~/isaac-lab/IsaacLab/logs/rsl_rl/ogre_navigation/`
+2. Locates the most recent model checkpoint (`model_*.pt`)
+3. Runs `play.py` to visualize and export the policy
+4. Creates `policy.onnx` and `policy.pt` in the run's `exported/` directory
+
+### Deploy Script (`scripts/deploy_model.sh`)
+
+Copies exported models to the ROS2 package:
 
 ```bash
+cd ~/ogre-lab
+
+# Copy latest model
+./scripts/deploy_model.sh
+
+# Copy and rebuild ROS2 package
+./scripts/deploy_model.sh --rebuild
+```
+
+**What it does:**
+1. Finds the most recent training run with exported models
+2. Copies `policy.onnx` and `policy.pt` to `~/ogre-lab/ros2_controller/models/`
+3. Optionally rebuilds the ROS2 package
+
+### Training Run Structure
+
+```
+~/isaac-lab/IsaacLab/logs/rsl_rl/ogre_navigation/
+└── 2025-11-28_10-14-31/           # Training run (timestamp)
+    ├── model_999.pt               # Checkpoint at iteration 999
+    ├── model_1999.pt              # Checkpoint at iteration 1999
+    ├── params/
+    │   └── env.yaml               # Training parameters
+    └── exported/                  # Created by export_policy.sh
+        ├── policy.pt              # JIT compiled PyTorch model
+        └── policy.onnx            # ONNX format for ROS2 deployment
+```
+
+## Required Directory Structure
+
+For all scripts to work correctly, follow this directory layout:
+
+```
+~/
+├── isaac-lab/
+│   └── IsaacLab/                  # Isaac Lab installation
+│       ├── isaaclab.sh
+│       ├── logs/rsl_rl/ogre_navigation/  # Training outputs
+│       └── source/isaaclab_tasks/isaaclab_tasks/direct/ogre_navigation/
+│                                  # Training environment (symlinked)
+├── ogre-lab/                      # This repository
+│   ├── scripts/
+│   │   ├── export_policy.sh       # Export trained model
+│   │   └── deploy_model.sh        # Deploy to ROS2
+│   └── ros2_controller/
+│       └── models/                # Deployed models
+│           ├── policy.onnx
+│           └── policy.pt
+├── ros2_ws/                       # ROS2 workspace
+│   └── src/
+│       ├── ogre-slam/             # SLAM and navigation
+│       │   └── usds/ogre_robot.usd  # Robot USD for training
+│       └── ogre_policy_controller/  # Symlink to ros2_controller
+└── miniconda3/
+    └── envs/
+        └── env_isaaclab/          # Isaac Lab conda environment
+```
+
+### Installation Paths
+
+| Component | Expected Path | Notes |
+|-----------|---------------|-------|
+| Isaac Lab | `~/isaac-lab/IsaacLab/` | Must use this path for scripts |
+| Isaac Sim | Installed via pip in `env_isaaclab` | `pip install isaacsim-rl` |
+| ROS2 Workspace | `~/ros2_ws/` | Standard ROS2 workspace |
+| Conda Env | `env_isaaclab` | Created during Isaac Lab setup |
+| Robot USD | `~/ros2_ws/src/ogre-slam/usds/ogre_robot.usd` | Referenced by training env |
+
+## Manual Export (Reference)
+
+If you need to manually export without using the scripts:
+
+```bash
+# Activate environment
+source ~/miniconda3/etc/profile.d/conda.sh
 conda activate env_isaaclab
 cd ~/isaac-lab/IsaacLab
 
-# With visualization
+# List training runs
+ls -lt logs/rsl_rl/ogre_navigation/
+
+# Export with visualization
 ./isaaclab.sh -p scripts/reinforcement_learning/rsl_rl/play.py \
     --task Isaac-Ogre-Navigation-Direct-v0 \
     --num_envs 16 \
-    --checkpoint logs/rsl_rl/ogre_navigation/2025-11-28_07-01-52/model_999.pt
+    --checkpoint logs/rsl_rl/ogre_navigation/<RUN>/model_1999.pt
 
-# Headless export only
+# Export headless
 ./isaaclab.sh -p scripts/reinforcement_learning/rsl_rl/play.py \
     --task Isaac-Ogre-Navigation-Direct-v0 \
     --num_envs 1 \
-    --checkpoint logs/rsl_rl/ogre_navigation/2025-11-28_07-01-52/model_999.pt \
+    --checkpoint logs/rsl_rl/ogre_navigation/<RUN>/model_1999.pt \
     --headless
-```
-
-### Export Output Structure
-
-```
-logs/rsl_rl/ogre_navigation/2025-11-28_07-01-52/
-├── model_999.pt          # Training checkpoint
-├── params/               # Training parameters
-│   └── env.yaml
-└── exported/
-    ├── policy.pt         # JIT compiled PyTorch model
-    └── policy.onnx       # ONNX format for ROS2 deployment
-```
-
-### Manual Copy to ogre-lab
-
-```bash
-# Copy ONNX model
-cp ~/isaac-lab/IsaacLab/logs/rsl_rl/ogre_navigation/2025-11-28_07-01-52/exported/policy.onnx \
-   ~/ogre-lab/ros2_controller/models/
-
-# Copy JIT model (optional)
-cp ~/isaac-lab/IsaacLab/logs/rsl_rl/ogre_navigation/2025-11-28_07-01-52/exported/policy.pt \
-   ~/ogre-lab/ros2_controller/models/
-
-# Rebuild ROS2 package to include new model
-cd ~/ros2_ws
-colcon build --packages-select ogre_policy_controller --symlink-install
-source install/setup.bash
 ```

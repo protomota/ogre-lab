@@ -30,6 +30,39 @@ This project trains a neural network policy to efficiently execute velocity comm
 - Robot USD model (`ogre_robot.usd` from ogre-slam repo - robot-only, no scene)
 - Conda environment `env_isaaclab`
 
+### Required Directory Structure
+
+For all scripts to work correctly, use these exact paths:
+
+```
+~/
+├── isaac-lab/
+│   └── IsaacLab/                  # Isaac Lab installation (REQUIRED PATH)
+│       ├── isaaclab.sh
+│       └── source/isaaclab_tasks/isaaclab_tasks/direct/ogre_navigation/
+│                                  # Training environment (symlinked from ogre-lab)
+├── ogre-lab/                      # This repository
+│   ├── scripts/
+│   │   ├── export_policy.sh       # Export trained model
+│   │   └── deploy_model.sh        # Deploy to ROS2
+│   └── ros2_controller/           # ROS2 policy controller package
+├── ros2_ws/                       # ROS2 workspace
+│   └── src/
+│       ├── ogre-slam/             # SLAM and navigation
+│       │   └── usds/ogre_robot.usd  # Robot USD (used by training)
+│       └── ogre_policy_controller/  # Symlink to ros2_controller
+└── miniconda3/
+    └── envs/
+        └── env_isaaclab/          # Isaac Lab conda environment
+```
+
+| Component | Required Path | Notes |
+|-----------|---------------|-------|
+| Isaac Lab | `~/isaac-lab/IsaacLab/` | Scripts expect this path |
+| Isaac Sim | pip installed in `env_isaaclab` | `pip install isaacsim-rl` |
+| ROS2 Workspace | `~/ros2_ws/` | Standard ROS2 layout |
+| Robot USD | `~/ros2_ws/src/ogre-slam/usds/ogre_robot.usd` | Referenced by training |
+
 ## Installation
 
 ### Step 1: Activate Isaac Lab Conda Environment
@@ -145,30 +178,24 @@ Training logs are saved in timestamped directories under `logs/rsl_rl/ogre_navig
 
 ### Step 1: Export the Policy
 
-Run `play.py` to visualize and export the trained model:
+Use the export script to visualize and export the trained model:
 
 ```bash
-conda activate env_isaaclab
-cd ~/isaac-lab/IsaacLab
+cd ~/ogre-lab
 
-# Find your latest training run
-ls -lt logs/rsl_rl/ogre_navigation/
-
-# Export with visualization (16 robots)
-./isaaclab.sh -p scripts/reinforcement_learning/rsl_rl/play.py \
-    --task Isaac-Ogre-Navigation-Direct-v0 \
-    --num_envs 16 \
-    --checkpoint logs/rsl_rl/ogre_navigation/<YOUR_RUN>/model_999.pt
+# Export latest model with visualization (16 robots)
+./scripts/export_policy.sh
 
 # OR export headless (faster)
-./isaaclab.sh -p scripts/reinforcement_learning/rsl_rl/play.py \
-    --task Isaac-Ogre-Navigation-Direct-v0 \
-    --num_envs 1 \
-    --checkpoint logs/rsl_rl/ogre_navigation/<YOUR_RUN>/model_999.pt \
-    --headless
+./scripts/export_policy.sh --headless
+
+# Export a specific training run
+./scripts/export_policy.sh 2025-11-28_10-14-31 --headless
 ```
 
-This creates `exported/policy.onnx` and `exported/policy.pt` in the training run directory.
+This runs `play.py` and creates `policy.onnx` and `policy.pt` in the training run's `exported/` directory.
+
+See [IMPLEMENTATION.md](docs/IMPLEMENTATION.md#export-and-deploy-scripts) for manual export commands.
 
 ### Step 2: Deploy to ROS2
 
@@ -265,7 +292,7 @@ Episodes terminate early if the robot flips (base height < 0.02m).
 
 **Wheel Sign Corrections (Important for Deployment):**
 
-The USD robot model (`ogre_robot.usd`) has inverted joint axes for the right-side wheels (FR and RR). When positive velocity is applied to all 4 joints, left wheels spin forward but right wheels spin backward. To create a normalized action space where `[+,+,+,+]` means "all wheels forward", sign corrections are applied.
+The USD robot model (`ogre_robot.usd`) has ALL wheel joint axes inverted. Negative velocity = forward motion for all wheels. To create a normalized action space where `[+,+,+,+]` means "all wheels forward", sign corrections are applied.
 
 **Why BOTH training AND deployment need the same negation (NOT a double negation):**
 
@@ -275,9 +302,9 @@ Training and deployment are **separate execution environments**. The policy lear
 ```
 Policy outputs: [+, +, +, +] (normalized: all positive = forward intent)
        ↓
-_apply_action() negates FR/RR: [+, -, +, -]
+_apply_action() negates ALL wheels: [-, -, -, -]
        ↓
-Sent to USD physics: [+, -, +, -]
+Sent to USD physics: [-, -, -, -]
        ↓
 Robot moves FORWARD in training ✓
 ```
@@ -286,9 +313,9 @@ Robot moves FORWARD in training ✓
 ```
 Policy outputs: [+, +, +, +] (same normalized output)
        ↓
-Isaac Sim action graph negates FR/RR: [+, -, +, -]  ← SAME correction
+Isaac Sim action graph negates ALL wheels: [-, -, -, -]  ← SAME correction
        ↓
-Sent to USD physics: [+, -, +, -]
+Sent to USD physics: [-, -, -, -]
        ↓
 Robot moves FORWARD in deployment ✓
 ```
@@ -301,16 +328,16 @@ NO negation
        ↓
 Sent to USD physics: [+, +, +, +]
        ↓
-Robot ROTATES instead of moving forward ✗
+Robot moves BACKWARD instead of forward ✗
 ```
 
 **Summary - Where sign corrections are applied:**
 
 | Component | Sign Correction | Notes |
 |-----------|-----------------|-------|
-| Training `_apply_action()` | Negate FR/RR (indices 1,3) | Before sending to physics |
-| Training `_get_observations()` | Negate FR/RR (indices 1,3) | For observation consistency |
-| Isaac Sim Action Graph | Negate FR/RR | Add Multiply × -1 nodes |
+| Training `_apply_action()` | Negate ALL wheels | Before sending to physics |
+| Training `_get_observations()` | Negate ALL wheels | For observation consistency |
+| Isaac Sim Action Graph | Negate ALL wheels | Multiply all wheel velocities × -1 |
 | ROS2 Policy Controller | None | Uses standard mecanum forward kinematics |
 
 **Flip Termination:**
