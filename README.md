@@ -30,25 +30,6 @@ This project trains a neural network policy to efficiently execute velocity comm
 - Robot USD model (`ogre_robot.usd` from ogre-slam repo - robot-only, no scene)
 - Conda environment `env_isaaclab`
 
-## Quick Start
-
-```bash
-# 1. Activate Isaac Lab conda environment
-conda activate env_isaaclab
-
-# 2. Symlink the environment into Isaac Lab (first time only)
-ln -sf ~/ogre-lab/isaaclab_env/ogre_navigation \
-  ~/isaac-lab/IsaacLab/source/isaaclab_tasks/isaaclab_tasks/direct/ogre_navigation
-
-# 3. Run training (headless)
-cd ~/isaac-lab/IsaacLab
-./isaaclab.sh -p scripts/reinforcement_learning/rsl_rl/train.py \
-    --task Isaac-Ogre-Navigation-Direct-v0 \
-    --num_envs 1024 \
-    --max_iterations 1000 \
-    --headless
-```
-
 ## Installation
 
 ### Step 1: Activate Isaac Lab Conda Environment
