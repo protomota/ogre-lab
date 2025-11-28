@@ -265,30 +265,40 @@ The policy is trained to maximize:
 | Wheel radius | 40mm (0.04m) | |
 | Wheelbase | 95mm | Front-rear axle distance |
 | Track width | 205mm | Left-right wheel distance |
-| **action_scale** | **6.0 rad/s** | Max wheel velocity - robot flips at higher values! |
-| Max linear velocity | 0.25 m/s | = action_scale × wheel_radius |
-| Max angular velocity | 1.0 rad/s | |
+| **action_scale** | **20.0 rad/s** | Max wheel velocity - tested stable value |
+| Max linear velocity | 1.0 m/s | Target velocity range for training |
+| Max angular velocity | 2.0 rad/s | Target angular velocity range |
 
 ### Velocity Configuration (CRITICAL)
 
-**WARNING:** The robot flips at wheel velocities above ~6 rad/s. These parameters must match between training and deployment:
+**NOTE:** Testing showed 6.0 rad/s is too slow, 200 rad/s causes flipping. 20.0 rad/s is stable.
+
+These parameters must match between training and deployment:
 
 ```
-action_scale = 6.0        # Max wheel velocity in rad/s (policy outputs ×6)
-max_lin_vel = 0.25        # Max body velocity = 6.0 × 0.04m = 0.24 m/s
-max_ang_vel = 1.0         # Max angular velocity in rad/s
+action_scale = 20.0       # Max wheel velocity in rad/s (policy outputs ×20)
+max_lin_vel = 1.0         # Target velocity range for training
+max_ang_vel = 2.0         # Target angular velocity range
 ```
 
 **Math:**
 - Policy outputs values in range [-1, 1]
-- Wheel velocity = policy_output × action_scale = ±6 rad/s max
-- Body velocity = wheel_velocity × wheel_radius = 6 × 0.04 = 0.24 m/s max
+- Wheel velocity = policy_output × action_scale = ±20 rad/s max
+- Body velocity = wheel_velocity × wheel_radius = 20 × 0.04 = 0.8 m/s max (theoretical)
 
 **Files that must have matching values:**
 1. `ogre_navigation_env.py` - training config
 2. `policy_controller_params.yaml` - deployment config
 
 ### Training Notes
+
+**Rewards:**
+
+The training environment uses these reward signals:
+- **Velocity tracking** (`rew_scale_vel_tracking = 2.0`): Main reward for matching target velocity
+- **Uprightness** (`rew_scale_uprightness = 1.0`): Penalty for tilting (+1 upright, -1 flipped)
+
+Episodes terminate early if the robot flips (base height < 0.02m).
 
 **Wheel Sign Corrections (Important for Deployment):**
 
@@ -436,9 +446,9 @@ The policy controller supports two output modes:
 | `output_mode` | "twist" | Output mode: "twist" or "wheel_velocities" |
 | `input_topic` | "/policy_cmd_vel_in" | Input velocity command topic |
 | `output_topic` | "/cmd_vel" | Output topic (Twist or Float32MultiArray) |
-| `action_scale` | 6.0 | Max wheel velocity in rad/s (robot flips at higher values, must match training) |
-| `max_lin_vel` | 0.25 | Max linear velocity in m/s (= action_scale × wheel_radius, must match training) |
-| `max_ang_vel` | 1.0 | Max angular velocity in rad/s (must match training) |
+| `action_scale` | 20.0 | Max wheel velocity in rad/s (must match training) |
+| `max_lin_vel` | 1.0 | Max linear velocity in m/s (must match training) |
+| `max_ang_vel` | 2.0 | Max angular velocity in rad/s (must match training) |
 | `control_frequency` | 30.0 | Control loop rate (Hz) |
 | `wheel_radius` | 0.040 | Wheel radius in meters |
 | `wheelbase` | 0.095 | Front-rear axle distance in meters |
