@@ -245,7 +245,7 @@ cd ~/ogre-lab
 
 **What it does:**
 1. Finds the most recent training run with exported models
-2. Copies `policy.onnx` and `policy.pt` to `~/ogre-lab/ros2_controller/models/`
+2. Copies `policy.onnx` and `policy.pt` to `~/ros2_ws/src/ogre-slam/ogre_policy_controller/models/`
 3. Optionally rebuilds the ROS2 package
 
 ### Training Run Structure
@@ -274,19 +274,16 @@ For all scripts to work correctly, follow this directory layout:
 │       ├── logs/rsl_rl/ogre_navigation/  # Training outputs
 │       └── source/isaaclab_tasks/isaaclab_tasks/direct/ogre_navigation/
 │                                  # Training environment (symlinked)
-├── ogre-lab/                      # This repository
-│   ├── scripts/
-│   │   ├── export_policy.sh       # Export trained model
-│   │   └── deploy_model.sh        # Deploy to ROS2
-│   └── ros2_controller/
-│       └── models/                # Deployed models
-│           ├── policy.onnx
-│           └── policy.pt
+├── ogre-lab/                      # This repository (training only)
+│   └── scripts/
+│       ├── export_policy.sh       # Export trained model
+│       └── deploy_model.sh        # Deploy to ogre-slam
 ├── ros2_ws/                       # ROS2 workspace
 │   └── src/
-│       ├── ogre-slam/             # SLAM and navigation
-│       │   └── usds/ogre_robot.usd  # Robot USD for training
-│       └── ogre_policy_controller/  # Symlink to ros2_controller
+│       ├── ogre-slam/             # SLAM, navigation, and policy controller
+│       │   ├── usds/ogre_robot.usd  # Robot USD for training
+│       │   └── ogre_policy_controller/  # ROS2 policy controller
+│       └── ogre_policy_controller/  # Symlink to above
 └── miniconda3/
     └── envs/
         └── env_isaaclab/          # Isaac Lab conda environment
@@ -301,6 +298,7 @@ For all scripts to work correctly, follow this directory layout:
 | ROS2 Workspace | `~/ros2_ws/` | Standard ROS2 workspace |
 | Conda Env | `env_isaaclab` | Created during Isaac Lab setup |
 | Robot USD | `~/ros2_ws/src/ogre-slam/usds/ogre_robot.usd` | Referenced by training env |
+| Policy Controller | `~/ros2_ws/src/ogre-slam/ogre_policy_controller/` | ROS2 package in ogre-slam |
 
 ## Manual Export (Reference)
 

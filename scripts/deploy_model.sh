@@ -9,7 +9,7 @@ set -e
 
 # Paths
 ISAACLAB_LOGS=~/isaac-lab/IsaacLab/logs/rsl_rl/ogre_navigation
-OGRE_LAB_MODELS=~/ogre-lab/ros2_controller/models
+POLICY_MODELS=~/ros2_ws/src/ogre-slam/ogre_policy_controller/models
 ROS2_WS=~/ros2_ws
 
 # Find the most recent training run
@@ -40,16 +40,16 @@ fi
 # Show what we're copying
 echo "Deploying model from: $LATEST_RUN"
 echo "  Source: $EXPORTED_DIR"
-echo "  Target: $OGRE_LAB_MODELS"
+echo "  Target: $POLICY_MODELS"
 
 # Copy models
-cp "$EXPORTED_DIR/policy.onnx" "$OGRE_LAB_MODELS/"
+cp "$EXPORTED_DIR/policy.onnx" "$POLICY_MODELS/"
 if [ -f "$EXPORTED_DIR/policy.pt" ]; then
-    cp "$EXPORTED_DIR/policy.pt" "$OGRE_LAB_MODELS/"
+    cp "$EXPORTED_DIR/policy.pt" "$POLICY_MODELS/"
 fi
 
 echo "Copied:"
-ls -la "$OGRE_LAB_MODELS"/policy.*
+ls -la "$POLICY_MODELS"/policy.*
 
 # Rebuild ROS2 package if requested
 if [ "$1" == "--rebuild" ]; then

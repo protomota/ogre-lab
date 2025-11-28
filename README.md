@@ -42,15 +42,15 @@ For all scripts to work correctly, use these exact paths:
 │       └── source/isaaclab_tasks/isaaclab_tasks/direct/ogre_navigation/
 │                                  # Training environment (symlinked from ogre-lab)
 ├── ogre-lab/                      # This repository
-│   ├── scripts/
-│   │   ├── export_policy.sh       # Export trained model
-│   │   └── deploy_model.sh        # Deploy to ROS2
-│   └── ros2_controller/           # ROS2 policy controller package
+│   └── scripts/
+│       ├── export_policy.sh       # Export trained model
+│       └── deploy_model.sh        # Deploy to ROS2
 ├── ros2_ws/                       # ROS2 workspace
 │   └── src/
 │       ├── ogre-slam/             # SLAM and navigation
-│       │   └── usds/ogre_robot.usd  # Robot USD (used by training)
-│       └── ogre_policy_controller/  # Symlink to ros2_controller
+│       │   ├── usds/ogre_robot.usd  # Robot USD (used by training)
+│       │   └── ogre_policy_controller/  # ROS2 policy controller
+│       └── ogre_policy_controller/  # Symlink to above
 └── miniconda3/
     └── envs/
         └── env_isaaclab/          # Isaac Lab conda environment
@@ -62,6 +62,7 @@ For all scripts to work correctly, use these exact paths:
 | Isaac Sim | pip installed in `env_isaaclab` | `pip install isaacsim-rl` |
 | ROS2 Workspace | `~/ros2_ws/` | Standard ROS2 layout |
 | Robot USD | `~/ros2_ws/src/ogre-slam/usds/ogre_robot.usd` | Referenced by training |
+| Policy Controller | `~/ros2_ws/src/ogre-slam/ogre_policy_controller/` | ROS2 package |
 
 ## Installation
 
@@ -346,13 +347,14 @@ Robot moves BACKWARD instead of forward ✗
 
 ## Policy Deployment (ROS2)
 
-The trained policy can be deployed as a ROS2 node that runs the neural network in real-time.
+The trained policy can be deployed as a ROS2 node that runs the neural network in real-time. The policy controller is now part of the **ogre-slam** repository.
 
 ### Install the ROS2 Package
 
 ```bash
-# Symlink or copy to your ROS2 workspace
-ln -sf ~/ogre-lab/ros2_controller ~/ros2_ws/src/ogre_policy_controller
+# The ogre_policy_controller is now in ogre-slam
+# A symlink is created automatically for colcon to find it:
+ln -sf ~/ros2_ws/src/ogre-slam/ogre_policy_controller ~/ros2_ws/src/ogre_policy_controller
 
 # IMPORTANT: Deactivate Isaac Lab conda env if active (uses different Python)
 conda deactivate
@@ -515,9 +517,6 @@ The robot in Isaac Sim should move forward. The policy converts the velocity com
 ```
 ogre-lab/
 ├── README.md                     # This file
-├── models/                       # Exported models for deployment
-│   ├── policy.pt                 # JIT compiled model
-│   └── policy.onnx               # ONNX model
 ├── isaaclab_env/                 # Isaac Lab environment
 │   └── ogre_navigation/
 │       ├── __init__.py           # Gym registration
@@ -526,19 +525,22 @@ ogre-lab/
 │           ├── __init__.py
 │           └── rsl_rl_ppo_cfg.py # PPO training config
 ├── scripts/
-│   ├── train_ogre_navigation.sh  # Training launcher
-│   └── export_policy.sh          # Export helper script
-├── ros2_controller/              # ROS2 deployment package
-│   ├── package.xml
-│   ├── setup.py
-│   ├── config/
-│   │   └── policy_controller_params.yaml
-│   ├── launch/
-│   │   └── policy_controller.launch.py
-│   ├── models/                   # Copy of exported models
-│   └── ogre_policy_controller/
-│       └── policy_controller_node.py
+│   ├── export_policy.sh          # Export trained model
+│   └── deploy_model.sh           # Deploy to ogre-slam
 └── docs/                         # Additional documentation
+
+ogre-slam/ogre_policy_controller/ # ROS2 policy controller (in ogre-slam repo)
+├── package.xml
+├── setup.py
+├── config/
+│   └── policy_controller_params.yaml
+├── launch/
+│   └── policy_controller.launch.py
+├── models/                       # Deployed models
+│   ├── policy.onnx
+│   └── policy.pt
+└── ogre_policy_controller/
+    └── policy_controller_node.py
 ```
 
 ## Troubleshooting
