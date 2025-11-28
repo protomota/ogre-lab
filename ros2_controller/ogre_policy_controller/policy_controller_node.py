@@ -267,16 +267,13 @@ class PolicyControllerNode(Node):
             R = wheel radius
             L = (wheelbase + track_width) / 2
 
-        The policy outputs wheel velocities with sign corrections already applied
-        (right wheels fr/rr negated in training), so we apply inverse corrections
-        before forward kinematics to get actual joint velocities.
+        The policy outputs wheel velocities directly without sign corrections.
+        Isaac Sim action graph handles any joint axis corrections for deployment.
         """
-        # Apply sign corrections: negate right wheels (fr, rr) to convert
-        # from policy space (corrected) to actual joint velocities
         w_fl = wheel_vel[0]
-        w_fr = -wheel_vel[1]  # Negate to get actual joint velocity
+        w_fr = wheel_vel[1]
         w_rl = wheel_vel[2]
-        w_rr = -wheel_vel[3]  # Negate to get actual joint velocity
+        w_rr = wheel_vel[3]
 
         R = self.wheel_radius
         L = self.L

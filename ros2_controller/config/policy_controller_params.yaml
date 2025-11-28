@@ -15,10 +15,13 @@ ogre_policy_controller:
     input_topic: "/policy_cmd_vel_in"
     output_topic: "/cmd_vel"
 
-    # Action scale - must match training config
-    action_scale: 25.0
+    # CRITICAL: action_scale is max wheel velocity in rad/s sent to articulation controller
+    # Testing: 6.0 rad/s too slow, 200 rad/s causes flipping. 20.0 is stable.
+    # Must match training config in ogre_navigation_env.py!
+    action_scale: 20.0
 
     # Velocity limits - must match training config
+    # These are the max target velocities the policy was trained on
     max_lin_vel: 1.0
     max_ang_vel: 2.0
 
