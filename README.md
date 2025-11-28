@@ -184,7 +184,7 @@ cd ~/ogre-lab
 ./scripts/deploy_model.sh --rebuild
 ```
 
-The script automatically finds the most recent training run and copies the exported models.
+The script automatically finds the most recent training run and copies the exported models. See [IMPLEMENTATION.md](docs/IMPLEMENTATION.md#manual-model-export-reference) for manual export steps.
 
 ### Step 3: Test with Isaac Sim or Real Robot
 
