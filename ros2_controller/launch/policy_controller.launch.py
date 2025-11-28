@@ -15,7 +15,7 @@ def generate_launch_description():
     # Declare launch arguments
     use_policy_arg = DeclareLaunchArgument(
         'use_policy',
-        default_value='false',
+        default_value='true',
         description='Use learned policy (true) or pass-through mode (false)'
     )
 

@@ -260,25 +260,89 @@ The policy is trained to maximize:
 
 ### Robot Parameters
 
-| Parameter | Value |
-|-----------|-------|
-| Wheel radius | 40mm |
-| Wheelbase | 95mm |
-| Track width | 205mm |
-| Max linear velocity | 1.0 m/s |
-| Max angular velocity | 2.0 rad/s |
-| Action scale | 25.0 rad/s |
+| Parameter | Value | Notes |
+|-----------|-------|-------|
+| Wheel radius | 40mm (0.04m) | |
+| Wheelbase | 95mm | Front-rear axle distance |
+| Track width | 205mm | Left-right wheel distance |
+| **action_scale** | **6.0 rad/s** | Max wheel velocity - robot flips at higher values! |
+| Max linear velocity | 0.25 m/s | = action_scale × wheel_radius |
+| Max angular velocity | 1.0 rad/s | |
+
+### Velocity Configuration (CRITICAL)
+
+**WARNING:** The robot flips at wheel velocities above ~6 rad/s. These parameters must match between training and deployment:
+
+```
+action_scale = 6.0        # Max wheel velocity in rad/s (policy outputs ×6)
+max_lin_vel = 0.25        # Max body velocity = 6.0 × 0.04m = 0.24 m/s
+max_ang_vel = 1.0         # Max angular velocity in rad/s
+```
+
+**Math:**
+- Policy outputs values in range [-1, 1]
+- Wheel velocity = policy_output × action_scale = ±6 rad/s max
+- Body velocity = wheel_velocity × wheel_radius = 6 × 0.04 = 0.24 m/s max
+
+**Files that must have matching values:**
+1. `ogre_navigation_env.py` - training config
+2. `policy_controller_params.yaml` - deployment config
 
 ### Training Notes
 
-**Wheel Sign Corrections:**
-The training environment applies wheel sign corrections to match the wheel joint axis orientations in the USD model. The **right-side wheels (FR, RR)** are negated in both actions and observations. This is because the joint axes for right wheels point in the opposite direction in the USD model.
+**Wheel Sign Corrections (Important for Deployment):**
 
-- In `_apply_action()`: FR (index 1) and RR (index 3) velocities are negated before applying
-- In `_get_observations()`: FR and RR wheel velocities are negated for consistency
-- In `policy_controller_node.py`: Inverse corrections applied in `_wheel_vel_to_twist()`
+The USD robot model (`ogre_robot.usd`) has inverted joint axes for the right-side wheels (FR and RR). When positive velocity is applied to all 4 joints, left wheels spin forward but right wheels spin backward. To create a normalized action space where `[+,+,+,+]` means "all wheels forward", sign corrections are applied.
 
-This ensures the policy learns a consistent representation where positive wheel velocities mean "forward rotation" for all wheels, regardless of joint axis orientation.
+**Why BOTH training AND deployment need the same negation (NOT a double negation):**
+
+Training and deployment are **separate execution environments**. The policy learns in a normalized action space where `[+,+,+,+] = forward`. Both environments must apply the same transformation.
+
+**Training Flow:**
+```
+Policy outputs: [+, +, +, +] (normalized: all positive = forward intent)
+       ↓
+_apply_action() negates FR/RR: [+, -, +, -]
+       ↓
+Sent to USD physics: [+, -, +, -]
+       ↓
+Robot moves FORWARD in training ✓
+```
+
+**Deployment Flow (must match training):**
+```
+Policy outputs: [+, +, +, +] (same normalized output)
+       ↓
+Isaac Sim action graph negates FR/RR: [+, -, +, -]  ← SAME correction
+       ↓
+Sent to USD physics: [+, -, +, -]
+       ↓
+Robot moves FORWARD in deployment ✓
+```
+
+**If you DON'T negate in Isaac Sim:**
+```
+Policy outputs: [+, +, +, +]
+       ↓
+NO negation
+       ↓
+Sent to USD physics: [+, +, +, +]
+       ↓
+Robot ROTATES instead of moving forward ✗
+```
+
+**Summary - Where sign corrections are applied:**
+
+| Component | Sign Correction | Notes |
+|-----------|-----------------|-------|
+| Training `_apply_action()` | Negate FR/RR (indices 1,3) | Before sending to physics |
+| Training `_get_observations()` | Negate FR/RR (indices 1,3) | For observation consistency |
+| Isaac Sim Action Graph | Negate FR/RR | Add Multiply × -1 nodes |
+| ROS2 Policy Controller | None | Uses standard mecanum forward kinematics |
+
+**Flip Termination:**
+- Episodes terminate early if robot base height drops below 0.02m (half wheel radius)
+- This prevents learning from unstable states and implicitly penalizes flipping
 
 ## Policy Deployment (ROS2)
 
@@ -372,9 +436,9 @@ The policy controller supports two output modes:
 | `output_mode` | "twist" | Output mode: "twist" or "wheel_velocities" |
 | `input_topic` | "/policy_cmd_vel_in" | Input velocity command topic |
 | `output_topic` | "/cmd_vel" | Output topic (Twist or Float32MultiArray) |
-| `action_scale` | 25.0 | Wheel velocity scaling factor (must match training) |
-| `max_lin_vel` | 1.0 | Max linear velocity (m/s, must match training) |
-| `max_ang_vel` | 2.0 | Max angular velocity (rad/s, must match training) |
+| `action_scale` | 6.0 | Max wheel velocity in rad/s (robot flips at higher values, must match training) |
+| `max_lin_vel` | 0.25 | Max linear velocity in m/s (= action_scale × wheel_radius, must match training) |
+| `max_ang_vel` | 1.0 | Max angular velocity in rad/s (must match training) |
 | `control_frequency` | 30.0 | Control loop rate (Hz) |
 | `wheel_radius` | 0.040 | Wheel radius in meters |
 | `wheelbase` | 0.095 | Front-rear axle distance in meters |
@@ -428,10 +492,12 @@ To test the policy controller with Isaac Sim before deploying to hardware:
 ```bash
 # Terminal 1: Start Isaac Sim with ogre.usd and press Play
 
-# Terminal 2: Launch the policy controller (uses system Python, not conda)
-conda deactivate  # Important: exit Isaac Lab conda env
-cd ~/ros2_ws
-source install/setup.bash
+# Terminal 2: Launch the Policy Controller
+# IMPORTANT: The ROS2 package uses system Python, not conda.
+# If you were training in env_isaaclab, you MUST deactivate first!
+conda deactivate
+export ROS_DOMAIN_ID=42
+source ~/ros2_ws/install/setup.bash
 ros2 launch ogre_policy_controller policy_controller.launch.py
 
 # Terminal 3: Send test commands
