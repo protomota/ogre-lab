@@ -141,70 +141,52 @@ The TensorBoard dashboard shows several graphs. The most important ones for your
 
 Training logs are saved in timestamped directories under `logs/rsl_rl/ogre_navigation/`.
 
-## Testing and Exporting a Trained Model
+## Testing and Deploying a Trained Model
 
-Running `play.py` both visualizes the policy AND exports it to ONNX/JIT formats for deployment.
+### Step 1: Export the Policy
 
-### Step 1: Find Your Training Run
-
-Training runs are saved in folders named with timestamps (format: `YYYY-MM-DD_HH-MM-SS`).
+Run `play.py` to visualize and export the trained model:
 
 ```bash
 conda activate env_isaaclab
 cd ~/isaac-lab/IsaacLab
 
-# List training runs (newest first)
+# Find your latest training run
 ls -lt logs/rsl_rl/ogre_navigation/
-```
 
-**Example output:**
-```
-total 24
-drwxrwxr-x 4 brad brad 4096 Nov 26 15:09 2025-11-26_13-34-55   <-- use this folder name
-drwxrwxr-x 5 brad brad 4096 Nov 26 12:16 2025-11-26_10-38-02
-```
-
-The **top entry** is your most recent run. Use that folder name in the commands below.
-
-### Step 2: Run and Export the Policy
-
-```bash
-# With GUI - watch 16 robots run the policy
+# Export with visualization (16 robots)
 ./isaaclab.sh -p scripts/reinforcement_learning/rsl_rl/play.py \
     --task Isaac-Ogre-Navigation-Direct-v0 \
     --num_envs 16 \
-    --checkpoint logs/rsl_rl/ogre_navigation/2025-11-26_13-34-55/model_999.pt
+    --checkpoint logs/rsl_rl/ogre_navigation/<YOUR_RUN>/model_999.pt
 
-# OR headless - just export without visualization
+# OR export headless (faster)
 ./isaaclab.sh -p scripts/reinforcement_learning/rsl_rl/play.py \
     --task Isaac-Ogre-Navigation-Direct-v0 \
     --num_envs 1 \
-    --checkpoint logs/rsl_rl/ogre_navigation/2025-11-26_13-34-55/model_999.pt \
+    --checkpoint logs/rsl_rl/ogre_navigation/<YOUR_RUN>/model_999.pt \
     --headless
 ```
 
-Both commands create an `exported/` folder:
-```
-logs/rsl_rl/ogre_navigation/2025-11-26_13-34-55/
-├── model_999.pt          # Training checkpoint
-└── exported/
-    ├── policy.pt         # JIT compiled PyTorch model
-    └── policy.onnx       # ONNX format for ROS2 deployment
-```
+This creates `exported/policy.onnx` and `exported/policy.pt` in the training run directory.
 
-### Step 3: Deploy to ROS2
+### Step 2: Deploy to ROS2
+
+Use the deployment script to copy the latest exported model:
 
 ```bash
-# Copy exported models to ogre-lab models directory
-cp logs/rsl_rl/ogre_navigation/2025-11-26_13-34-55/exported/policy.onnx ~/ogre-lab/models/
-cp logs/rsl_rl/ogre_navigation/2025-11-26_13-34-55/exported/policy.pt ~/ogre-lab/models/
+cd ~/ogre-lab
+
+# Copy latest model
+./scripts/deploy_model.sh
+
+# Copy and rebuild ROS2 package
+./scripts/deploy_model.sh --rebuild
 ```
 
-Pre-exported models are available in `models/` directory.
+The script automatically finds the most recent training run and copies the exported models.
 
-For ROS2 package setup and testing instructions, see the **[ogre-slam README](https://github.com/protomota/ogre-slam#using-the-trained-rl-policy)**.
-
-### Step 4: Test with Isaac Sim or Real Robot
+### Step 3: Test with Isaac Sim or Real Robot
 
 See the **[ogre-slam README](https://github.com/protomota/ogre-slam#using-the-trained-rl-policy)** for instructions on testing the deployed policy with:
 - Isaac Sim simulation

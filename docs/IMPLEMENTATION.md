@@ -35,15 +35,15 @@ Isaac Lab's `Articulation` class finds joints by name, then uses PhysX to apply 
 
 ## Wheel Sign Corrections
 
-The training environment applies wheel sign corrections to match joint axis orientations:
+The USD robot has inverted joint axes for right-side wheels (FR and RR). The training environment applies sign corrections so the policy learns in a normalized space where `[+,+,+,+] = forward`:
 
 ```python
 def _apply_action(self) -> None:
     """Apply wheel velocity targets to the robot."""
     corrected_actions = self.actions.clone()
-    # Negate front wheels to match joint axis orientation
-    corrected_actions[:, 0] = -corrected_actions[:, 0]  # FL
-    corrected_actions[:, 1] = -corrected_actions[:, 1]  # FR
+    # Negate right wheels to match joint axis orientation
+    corrected_actions[:, 1] *= -1  # FR
+    corrected_actions[:, 3] *= -1  # RR
 
     self.robot.set_joint_velocity_target(corrected_actions, joint_ids=self._wheel_joint_ids)
 ```
@@ -52,15 +52,16 @@ The same correction is applied to observations so the policy sees consistent dat
 
 ```python
 def _get_observations(self) -> dict:
-    joint_vel = self.robot.data.joint_vel[:, self._wheel_joint_ids]
+    joint_vel = self.robot.data.joint_vel[:, self._wheel_joint_ids].clone()
 
     # Correct wheel velocity signs to match action convention
-    corrected_joint_vel = joint_vel.clone()
-    corrected_joint_vel[:, 0] = -corrected_joint_vel[:, 0]  # FL
-    corrected_joint_vel[:, 1] = -corrected_joint_vel[:, 1]  # FR
+    joint_vel[:, 1] *= -1  # FR
+    joint_vel[:, 3] *= -1  # RR
 ```
 
 This ensures the policy learns: **positive wheel velocity = forward motion** for all wheels.
+
+**Important:** The Isaac Sim action graph must also negate FR/RR wheel velocities during deployment to match the training environment.
 
 ## Training Configuration
 
@@ -68,9 +69,10 @@ This ensures the policy learns: **positive wheel velocity = forward motion** for
 
 | Parameter | Value | Description |
 |-----------|-------|-------------|
-| `action_scale` | 50.0 | Multiplier for policy output → wheel velocity (rad/s) |
-| `max_lin_vel` | 8.0 | Maximum linear velocity for training (m/s) |
-| `max_ang_vel` | 6.0 | Maximum angular velocity for training (rad/s) |
+| `action_scale` | 20.0 | Multiplier for policy output → wheel velocity (rad/s) |
+| `max_lin_vel` | 1.0 | Maximum linear velocity for training (m/s) |
+| `max_ang_vel` | 2.0 | Maximum angular velocity for training (rad/s) |
+| `rew_scale_uprightness` | 1.0 | Reward for staying upright (+1 upright, -1 flipped) |
 | `decimation` | 4 | Physics steps per control step |
 | `episode_length_s` | 10.0 | Episode duration (seconds) |
 
@@ -175,3 +177,69 @@ policy output [-1, 1]    →    policy output [-1, 1]
 - Action scale too low
 - Policy not trained long enough
 - Observation/action space mismatch between training and deployment
+
+## Manual Model Export (Reference)
+
+If you need to manually find and copy models instead of using `./scripts/deploy_model.sh`:
+
+### Finding Training Runs
+
+Training runs are saved with timestamps in `~/isaac-lab/IsaacLab/logs/rsl_rl/ogre_navigation/`:
+
+```bash
+# List training runs (newest first)
+ls -lt ~/isaac-lab/IsaacLab/logs/rsl_rl/ogre_navigation/
+
+# Example output:
+# drwxrwxr-x 4 brad brad 4096 Nov 28 08:44 2025-11-28_07-01-52  <-- most recent
+# drwxrwxr-x 5 brad brad 4096 Nov 27 19:02 2025-11-27_18-30-00
+```
+
+### Exporting a Specific Checkpoint
+
+```bash
+conda activate env_isaaclab
+cd ~/isaac-lab/IsaacLab
+
+# With visualization
+./isaaclab.sh -p scripts/reinforcement_learning/rsl_rl/play.py \
+    --task Isaac-Ogre-Navigation-Direct-v0 \
+    --num_envs 16 \
+    --checkpoint logs/rsl_rl/ogre_navigation/2025-11-28_07-01-52/model_999.pt
+
+# Headless export only
+./isaaclab.sh -p scripts/reinforcement_learning/rsl_rl/play.py \
+    --task Isaac-Ogre-Navigation-Direct-v0 \
+    --num_envs 1 \
+    --checkpoint logs/rsl_rl/ogre_navigation/2025-11-28_07-01-52/model_999.pt \
+    --headless
+```
+
+### Export Output Structure
+
+```
+logs/rsl_rl/ogre_navigation/2025-11-28_07-01-52/
+├── model_999.pt          # Training checkpoint
+├── params/               # Training parameters
+│   └── env.yaml
+└── exported/
+    ├── policy.pt         # JIT compiled PyTorch model
+    └── policy.onnx       # ONNX format for ROS2 deployment
+```
+
+### Manual Copy to ogre-lab
+
+```bash
+# Copy ONNX model
+cp ~/isaac-lab/IsaacLab/logs/rsl_rl/ogre_navigation/2025-11-28_07-01-52/exported/policy.onnx \
+   ~/ogre-lab/ros2_controller/models/
+
+# Copy JIT model (optional)
+cp ~/isaac-lab/IsaacLab/logs/rsl_rl/ogre_navigation/2025-11-28_07-01-52/exported/policy.pt \
+   ~/ogre-lab/ros2_controller/models/
+
+# Rebuild ROS2 package to include new model
+cd ~/ros2_ws
+colcon build --packages-select ogre_policy_controller --symlink-install
+source install/setup.bash
+```
