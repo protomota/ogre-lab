@@ -384,6 +384,132 @@ ogre-slam/ogre_policy_controller/ # ROS2 policy controller (in ogre-slam repo)
     └── policy_controller_node.py
 ```
 
+## Nav2 Costmap Reference
+
+When integrating with Nav2 for autonomous navigation, understanding costmaps is essential for debugging planning failures.
+
+### What Are Costmaps?
+
+Nav2 uses **costmaps** to represent where the robot can and cannot go. Costmaps are 2D grids where each cell has a cost value (0-254) indicating how "expensive" it is to traverse that location.
+
+**Cost Values:**
+
+| Cost | Name | Meaning |
+|------|------|---------|
+| 0 | FREE_SPACE | Safe to traverse |
+| 1-252 | INFLATED | Increasingly expensive (near obstacles) |
+| 253 | INSCRIBED | Inside robot's radius from obstacle (collision likely) |
+| 254 | LETHAL | Obstacle cell (certain collision) |
+| 255 | NO_INFORMATION | Unknown space |
+
+### Two Costmaps
+
+| Costmap | Topic | Purpose | Size |
+|---------|-------|---------|------|
+| **Global** | `/global_costmap/costmap` | Path planning on full map | Entire map |
+| **Local** | `/local_costmap/costmap` | Reactive obstacle avoidance | 3m × 3m rolling window |
+
+The **global costmap** is used by the planner (NavFn/Smac) to find a path from start to goal. The **local costmap** is used by the controller (DWB) to follow that path while avoiding obstacles detected in real-time by sensors.
+
+### How Inflation Works
+
+```
+                    inflation_radius (0.35m)
+                    ◄────────────────────────►
+
+Wall ████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░
+     ▲              ▲                          ▲
+     │              │                          │
+  Lethal         Inscribed                   Free
+  (cost=254)     (cost=253)                 (cost=0)
+                    │
+                    └─ robot_radius (0.20m)
+
+Cost drops from 253 to 0 based on cost_scaling_factor.
+Higher cost_scaling_factor = faster dropoff = paths closer to walls.
+```
+
+**Key Parameters:**
+- `robot_radius` (0.20m): The inscribed radius - if robot center enters this zone, collision is certain
+- `inflation_radius` (0.35m): How far from obstacles to spread costs - paths prefer to stay outside this zone
+- `cost_scaling_factor` (3.0): How quickly costs drop off - higher means costs drop faster
+
+### Costmap Layers
+
+Both costmaps are built from multiple layers:
+
+| Layer | Purpose | Data Source |
+|-------|---------|-------------|
+| `static_layer` | Walls from saved map | `/map` topic |
+| `obstacle_layer` | Real-time obstacles | LIDAR (`/scan`), Camera (`/camera_points`) |
+| `voxel_layer` | 3D obstacle detection | PointCloud2 (local costmap only) |
+| `inflation_layer` | Expand obstacles by robot radius | Applied last to all obstacles |
+
+### Visualizing Costmaps in RViz
+
+The `navigation.rviz` config includes both costmaps. When viewing:
+
+**Color Coding (costmap color scheme):**
+- **Red/Magenta**: Lethal obstacles (cost=254) - walls, detected obstacles
+- **Purple/Blue**: High cost inflated zone - avoid if possible
+- **Cyan/Light Blue**: Lower cost zone - prefer to stay here
+- **Gray**: Free space (cost=0) - optimal for planning
+
+**Topics to display:**
+```
+/global_costmap/costmap       # Full map with inflation
+/local_costmap/costmap        # Rolling window around robot
+/global_costmap/costmap_raw   # Without inflation (debug)
+/local_costmap/costmap_raw    # Without inflation (debug)
+```
+
+### Common Costmap Issues
+
+| Symptom | Likely Cause | Solution |
+|---------|--------------|----------|
+| Goal appears in red zone | Goal too close to wall | Click further from walls or increase planner tolerance |
+| Planner fails "legal potential but no path" | Goal in inscribed zone | Increase `tolerance`, switch to Smac planner |
+| Robot gets stuck in corridors | Inflation too wide | Reduce `inflation_radius` (try 0.30-0.35m) |
+| Robot clips walls | Inflation too narrow | Increase `inflation_radius` (try 0.40-0.50m) |
+| Obstacles not appearing | Sensor not publishing | Check `/scan` and `/camera_points` topics |
+| Stale obstacles | Clearing not working | Check `clearing: True` in observation sources |
+
+### Planner Selection
+
+Nav2 supports multiple planners. Choose based on your needs:
+
+| Planner | Plugin | Best For | Known Issues |
+|---------|--------|----------|--------------|
+| **NavFn** | `nav2_navfn_planner/NavfnPlanner` | Simple environments | "Legal potential but no path" bug in tight spaces |
+| **Smac 2D** | `nav2_smac_planner/SmacPlanner2D` | Tight spaces, reliable | Slower than NavFn |
+| **Smac Hybrid** | `nav2_smac_planner/SmacPlannerHybrid` | Non-holonomic robots | Overkill for mecanum |
+| **Theta\*** | `nav2_theta_star_planner/ThetaStarPlanner` | Any-angle paths | Can cut corners |
+
+**Current Configuration:** Smac 2D (recommended for maze navigation)
+
+```yaml
+planner_server:
+  GridBased:
+    plugin: "nav2_smac_planner/SmacPlanner2D"
+    tolerance: 0.50  # Search 50cm around goal for valid endpoint
+    max_planning_time: 2.0  # seconds
+```
+
+### Debugging Commands
+
+```bash
+# Check costmap is publishing
+ros2 topic hz /global_costmap/costmap
+ros2 topic hz /local_costmap/costmap
+
+# View costmap info
+ros2 topic echo /global_costmap/costmap --once | head -20
+
+# Check costmap parameters
+ros2 param get /global_costmap/global_costmap inflation_layer.inflation_radius
+ros2 param get /local_costmap/local_costmap inflation_layer.inflation_radius
+```
+
 ## Troubleshooting
 
 ### "ModuleNotFoundError: No module named 'isaaclab'"
