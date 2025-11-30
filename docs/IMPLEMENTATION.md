@@ -285,6 +285,55 @@ With `max_lin_vel=0.5` (higher than physically achievable), the policy learns to
 2. Achieve ~0.32 m/s actual velocity (the physical limit)
 3. Still get partial tracking reward for getting as close as possible
 
+### Velocity Configuration Chain (Training → Nav2 → Isaac Sim)
+
+**CRITICAL:** All velocity parameters must match across training and deployment. Mismatches cause navigation failures.
+
+```
+Training (Isaac Lab)           Nav2 (ROS2)                  Isaac Sim
+─────────────────────         ─────────────────────        ────────────────
+max_lin_vel = 0.5 m/s    ═══► DWB max_vel_x = 0.5     ═══► Policy Controller
+max_ang_vel = 2.0 rad/s  ═══► DWB max_vel_theta = 2.0 ═══►   action_scale = 8.0
+action_scale = 8.0       ═══► velocity_smoother:     ═══►   max_lin_vel = 0.5
+                               max_velocity: [0.5, 0.5, 2.0]
+```
+
+**Common Mistake:** Confusing `action_scale` (8.0 rad/s wheel velocity) with `max_lin_vel` (0.5 m/s body velocity).
+- `action_scale = 8.0` → Wheel velocity in **rad/s**
+- `max_lin_vel = 0.5` → Body velocity in **m/s**
+
+These are different units! Nav2 uses body velocity (m/s), not wheel velocity (rad/s).
+
+**Configuration Files That Must Match:**
+
+| Parameter | Training Config | Nav2 nav2_params.yaml | Policy Controller |
+|-----------|-----------------|----------------------|-------------------|
+| Max linear velocity | `max_lin_vel: 0.5` | `max_vel_x: 0.5`, `max_speed_xy: 0.5` | `max_lin_vel: 0.5` |
+| Max angular velocity | `max_ang_vel: 2.0` | `max_vel_theta: 2.0` | `max_ang_vel: 2.0` |
+| Action scale | `action_scale: 8.0` | N/A | `action_scale: 8.0` |
+| Velocity smoother | N/A | `max_velocity: [0.5, 0.5, 2.0]` | N/A |
+
+**What Happens With Mismatched Velocities:**
+
+If Nav2 is configured for higher velocities than training (e.g., 8.0 m/s instead of 0.5 m/s):
+1. DWB plans trajectories assuming 16x faster robot
+2. Trajectory predictions extend far beyond actual capability
+3. Robot constantly fails "make progress" checks
+4. Strange red trajectory predictions in RViz
+5. Navigation fails with "FollowPath failed" errors
+
+**Verifying Configuration:**
+```bash
+# Check Nav2 velocity limits
+grep -E "max_vel|max_speed" ~/ros2_ws/src/ogre-slam/config/nav2_params.yaml
+
+# Check training limits
+grep -E "max_lin_vel|max_ang_vel|action_scale" ~/ogre-lab/isaaclab_env/ogre_navigation/ogre_navigation_env.py
+
+# Check policy controller
+grep -E "max_lin_vel|max_ang_vel|action_scale" ~/ros2_ws/src/ogre-slam/ogre_policy_controller/config/policy_controller_params.yaml
+```
+
 ### Observation Space (10 dimensions)
 
 | Index | Description | Source |
@@ -888,6 +937,7 @@ Lower cost_scaling_factor = slower dropoff = more cautious paths.
 
 | Date | Changes |
 |------|---------|
+| 2025-11-30 | Added velocity configuration chain documentation explaining relationship between training values and Nav2 config |
 | 2025-11-30 | Added wall thickness requirements (20cm min for reliable costmap detection), updated costmap values |
 | 2025-11-30 | Increased velocity limits (max_lin_vel: 0.3→0.5, max_ang_vel: 1.0→2.0) for faster navigation |
 | 2025-11-30 | Fixed action clipping bug, replaced energy penalty with exceed-limit penalty, added Nav2 integration docs, added costmap tuning guide |
