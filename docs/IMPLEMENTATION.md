@@ -2,6 +2,140 @@
 
 Technical details on how the ogre-lab RL training system works.
 
+## Tools and Technologies Overview
+
+This project uses several interconnected tools for robot simulation, training, and autonomous navigation.
+
+### NVIDIA Isaac Sim
+
+**What it is:** A high-fidelity robotics simulator built on NVIDIA Omniverse, using PhysX for physics simulation.
+
+**What it does:**
+- Renders realistic 3D environments with accurate physics
+- Simulates robot dynamics (wheels, joints, sensors)
+- Publishes ROS2 topics (`/odom`, `/scan`, `/clock`) for integration with Nav2
+- Uses USD (Universal Scene Description) files to define robot models and environments
+
+**When we use it:** Testing the trained policy in simulation before deploying to the real robot. Isaac Sim runs the robot scene and responds to `/joint_command` messages from the policy controller.
+
+### NVIDIA Isaac Lab
+
+**What it is:** A reinforcement learning framework built on top of Isaac Sim, designed for training robot policies.
+
+**What it does:**
+- Runs thousands of robot instances in parallel for fast RL training
+- Provides gym-like environments for policy training
+- Integrates with RL libraries (RSL-RL, Stable Baselines3)
+- Exports trained policies to ONNX/PyTorch formats
+
+**When we use it:** Training the velocity tracking policy. Isaac Lab runs 1024+ robots simultaneously, each learning to convert velocity commands to wheel velocities.
+
+### ROS2 (Robot Operating System 2)
+
+**What it is:** A middleware framework for robot software development, providing publish/subscribe messaging, services, and actions.
+
+**What it does:**
+- Manages communication between nodes via topics (e.g., `/cmd_vel`, `/odom`, `/scan`)
+- Provides standard message types (`geometry_msgs/Twist`, `sensor_msgs/LaserScan`)
+- Handles coordinate frame transforms (TF2)
+- Launches and manages multiple nodes
+
+**Key ROS2 concepts:**
+- **Node:** A single process that performs a specific function
+- **Topic:** A named channel for publishing/subscribing messages
+- **Message:** A data structure (e.g., `Twist` for velocity commands)
+- **Launch file:** Python script that starts multiple nodes with configuration
+
+### Nav2 (Navigation 2)
+
+**What it is:** The ROS2 navigation stack - a collection of packages for autonomous robot navigation.
+
+**What it does:**
+- **Path Planning:** Computes optimal paths from current position to goal (NavFn planner)
+- **Local Control:** Generates velocity commands to follow paths while avoiding obstacles (DWB controller)
+- **Localization:** Estimates robot position on a map using LIDAR (AMCL)
+- **Costmaps:** Maintains 2D obstacle maps for planning and avoidance
+- **Behavior Trees:** Coordinates navigation behaviors (replanning, recovery)
+
+**Key Nav2 components in this project:**
+| Component | Purpose |
+|-----------|---------|
+| `map_server` | Loads and serves the saved map |
+| `amcl` | Particle filter localization (map→odom transform) |
+| `planner_server` | Global path planning (NavFn) |
+| `controller_server` | Local trajectory control (DWB) |
+| `behavior_server` | Recovery behaviors (spin, backup, wait) |
+| `bt_navigator` | Behavior tree coordinator |
+| `velocity_smoother` | Smooths velocity commands to reduce jerk |
+
+### RViz2
+
+**What it is:** The ROS2 3D visualization tool.
+
+**What it does:**
+- Visualizes robot state, sensor data, and navigation in real-time
+- Displays the map, LIDAR scans, costmaps, and planned paths
+- Allows setting initial pose (2D Pose Estimate) and navigation goals (Nav2 Goal)
+- Shows TF coordinate frames for debugging
+
+**Key RViz displays for navigation:**
+- **Map:** The static occupancy grid from `map_server`
+- **LaserScan:** Real-time LIDAR data from `/scan`
+- **RobotModel:** Robot visualization from URDF/USD
+- **Path:** Global and local planned paths
+- **Costmap:** Obstacle inflation and planning costs
+
+### slam_toolbox
+
+**What it is:** A ROS2 SLAM (Simultaneous Localization and Mapping) package.
+
+**What it does:**
+- Builds maps from LIDAR scans while the robot moves
+- Performs loop closure to correct accumulated drift
+- Can operate in mapping mode (build new map) or localization mode (use existing map)
+
+**When we use it:** Creating maps of the environment before autonomous navigation. The saved map is then loaded by `map_server` for Nav2.
+
+### ONNX Runtime
+
+**What it is:** A cross-platform inference engine for running trained neural network models.
+
+**What it does:**
+- Executes the trained policy model efficiently
+- Provides consistent inference across different platforms (GPU, CPU)
+- Supports models exported from PyTorch, TensorFlow, etc.
+
+**When we use it:** The policy controller loads the ONNX model to convert velocity commands to wheel velocities in real-time.
+
+### System Architecture Diagram
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                              TRAINING (Isaac Lab)                           │
+│  ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐         │
+│  │  Isaac Lab      │    │   RSL-RL PPO    │    │  Policy Export  │         │
+│  │  Environment    │───►│   Training      │───►│  (ONNX/JIT)     │         │
+│  │  (1024 robots)  │    │                 │    │                 │         │
+│  └─────────────────┘    └─────────────────┘    └────────┬────────┘         │
+└────────────────────────────────────────────────────────┼────────────────────┘
+                                                         │
+                                                         ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                             DEPLOYMENT (ROS2)                               │
+│                                                                             │
+│  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐  │
+│  │   RViz2     │    │    Nav2     │    │   Policy    │    │  Isaac Sim  │  │
+│  │ Visualization│◄──│  Navigation │───►│  Controller │───►│  or Real    │  │
+│  │             │    │   Stack     │    │  (ONNX)     │    │   Robot     │  │
+│  └─────────────┘    └─────────────┘    └─────────────┘    └─────────────┘  │
+│        ▲                  │                  │                   │          │
+│        │                  ▼                  ▼                   ▼          │
+│        │            /cmd_vel_smoothed  /joint_command       /odom, /scan   │
+│        └───────────────────────────────────────────────────────────────────│
+│                              ROS2 Topics                                    │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
 ## How Isaac Lab Controls the Robot
 
 Isaac Lab uses **joint names** from your USD file to control the robot wheels.
