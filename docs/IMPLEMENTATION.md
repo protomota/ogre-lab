@@ -756,11 +756,84 @@ Isaac Sim must subscribe to `/joint_command` and apply wheel velocities:
 
 If not using the policy controller, Isaac Sim can directly subscribe to `/cmd_vel` and compute wheel velocities using mecanum kinematics (see CLAUDE.md for equations).
 
+### Nav2 Costmap Configuration (Obstacle Avoidance)
+
+The costmap configuration controls how close the robot gets to obstacles. If the robot clips corners or collides with walls, adjust these parameters in `nav2_params.yaml`.
+
+**Key Parameters:**
+
+| Parameter | Location | Purpose |
+|-----------|----------|---------|
+| `robot_radius` | local/global_costmap | Robot's circumscribed radius (m) |
+| `inflation_radius` | inflation_layer | How far to inflate obstacles (m) |
+| `cost_scaling_factor` | inflation_layer | How quickly costs drop off from obstacles |
+| `BaseObstacle.scale` | FollowPath (DWB) | Weight for obstacle avoidance in trajectory scoring |
+
+**Current Configuration (safe defaults):**
+
+```yaml
+# Costmap inflation (both local and global)
+inflation_layer:
+  # inflation_radius = robot_radius + desired_clearance
+  # 0.20m robot + 0.25m clearance = 0.45m
+  inflation_radius: 0.45
+
+  # Lower = costs stay high further from obstacles = more cautious
+  # Range: 1.0 (very cautious) to 10.0 (aggressive)
+  cost_scaling_factor: 3.0
+
+# DWB controller obstacle avoidance
+FollowPath:
+  # Higher = stronger obstacle avoidance
+  BaseObstacle.scale: 0.02
+
+  # Higher = follow planned path more strictly (less corner cutting)
+  PathAlign.scale: 32.0
+  PathDist.scale: 32.0
+```
+
+**Tuning Guide:**
+
+| Problem | Solution |
+|---------|----------|
+| Robot clips corners | Increase `inflation_radius` (try 0.50-0.60m) |
+| Robot too far from walls | Decrease `inflation_radius` (try 0.35-0.40m) |
+| Robot cuts across obstacles | Increase `BaseObstacle.scale` (try 0.03-0.05) |
+| Robot won't go through narrow gaps | Decrease `inflation_radius` and `cost_scaling_factor` |
+| Path planning fails in tight spaces | Decrease `inflation_radius` below robot_radius + gap_width/2 |
+
+**How Inflation Works:**
+
+```
+                    inflation_radius (0.45m)
+                    ◄────────────────────────►
+
+Wall ████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░
+     ▲              ▲                          ▲
+     │              │                          │
+  Lethal         Inscribed                   Free
+  (cost=254)     (cost=253)                 (cost=0)
+                    │
+                    └─ robot_radius (0.20m)
+
+Cost drops from 253 to 0 based on cost_scaling_factor.
+Lower cost_scaling_factor = slower dropoff = more cautious paths.
+```
+
+**Verifying Costmap in RViz:**
+
+1. Add a "Map" display for `/local_costmap/costmap`
+2. You should see:
+   - **Purple/Red** around obstacles (high cost, avoid)
+   - **Blue/Cyan** gradient showing inflation zone
+   - **Gray** for free space
+3. If inflation looks too small, increase `inflation_radius`
+
 ## Version History
 
 | Date | Changes |
 |------|---------|
-| 2025-11-30 | Fixed action clipping bug, replaced energy penalty with exceed-limit penalty, added Nav2 integration docs |
+| 2025-11-30 | Fixed action clipping bug, replaced energy penalty with exceed-limit penalty, added Nav2 integration docs, added costmap tuning guide |
 | 2025-11-29 | Added wheel sign corrections for FR/RR joints |
 | 2025-11-28 | Added export and deploy scripts |
 | 2025-11-27 | Initial implementation |
