@@ -463,11 +463,170 @@ output_mode: "joint_state"
 output_topic: "/joint_command"
 ```
 
+## Nav2 Integration with Isaac Sim
+
+The trained policy runs in a ROS2 node that converts Nav2 velocity commands into wheel velocities for Isaac Sim.
+
+### Topic Routing Architecture
+
+```
+Nav2 Stack                    Policy Controller              Isaac Sim
+───────────────────          ──────────────────────         ─────────────
+controller_server            ogre_policy_controller         Articulation
+     │                              │                        Controller
+     │ /cmd_vel                     │                            │
+     ▼                              │                            │
+velocity_smoother                   │                            │
+     │                              │                            │
+     │ /cmd_vel_smoothed            │                            │
+     └─────────────────────────────►│                            │
+                                    │ /joint_command             │
+                                    └───────────────────────────►│
+                                                                 │
+                                                                 ▼
+                                                            Robot moves
+```
+
+**Topic Details:**
+
+| Topic | Type | Publisher | Subscriber | Description |
+|-------|------|-----------|------------|-------------|
+| `/cmd_vel` | Twist | controller_server | velocity_smoother | Raw velocity commands from DWB planner |
+| `/cmd_vel_smoothed` | Twist | velocity_smoother | policy_controller | Smoothed velocities (reduces jerk) |
+| `/joint_command` | JointState | policy_controller | Isaac Sim | Wheel velocity targets (rad/s) |
+
+### Launching Nav2 with the Policy Controller
+
+**Terminal 1 - Isaac Sim:**
+```bash
+# Start Isaac Sim with the Ogre robot scene
+# Press Play to begin simulation
+```
+
+**Terminal 2 - Navigation Stack:**
+```bash
+export ROS_DOMAIN_ID=42
+source ~/ros2_ws/install/setup.bash
+
+# Launch Nav2 with a saved map
+ros2 launch ogre_slam navigation.launch.py \
+    map:=~/ros2_ws/src/ogre-slam/maps/isaac_sim_map.yaml \
+    use_sim_time:=true \
+    use_rviz:=true
+```
+
+**Terminal 3 - Policy Controller:**
+```bash
+export ROS_DOMAIN_ID=42
+source ~/ros2_ws/install/setup.bash
+
+# Launch the policy controller
+ros2 launch ogre_policy_controller policy_controller.launch.py
+```
+
+### Policy Controller Configuration
+
+The policy controller subscribes to `/cmd_vel_smoothed` (NOT `/cmd_vel` directly) because:
+1. Nav2's `velocity_smoother` applies acceleration limits and jerk reduction
+2. This prevents sudden velocity spikes that could destabilize the robot
+3. The smoothed output is better suited for the learned policy
+
+**Configuration file (`policy_controller_params.yaml`):**
+
+```yaml
+ogre_policy_controller:
+  ros__parameters:
+    # Model configuration
+    model_path: ""  # Auto-finds in models/ directory
+    model_type: "onnx"
+
+    # Topic routing - MUST match Nav2 velocity_smoother output
+    input_topic: "/cmd_vel_smoothed"   # From Nav2 velocity_smoother
+    output_topic: "/joint_command"      # To Isaac Sim
+    output_mode: "joint_state"
+
+    # MUST match training config
+    action_scale: 8.0
+    max_lin_vel: 0.3
+    max_ang_vel: 1.0
+
+    # Robot geometry (for inverse kinematics fallback)
+    wheel_radius: 0.040
+    wheelbase: 0.095
+    track_width: 0.205
+
+    # Wheel joint order (matches Isaac Lab: FR, RR, RL, FL)
+    wheel_joint_names:
+      - "fr_joint"
+      - "rr_joint"
+      - "rl_joint"
+      - "fl_joint"
+```
+
+### Common Nav2 Integration Issues
+
+**Issue: No velocity commands reaching policy controller**
+
+Check topic connectivity:
+```bash
+# List all cmd_vel topics
+ros2 topic list | grep cmd_vel
+
+# Check publishers/subscribers
+ros2 topic info /cmd_vel_smoothed
+# Should show: Publisher count: 1 (velocity_smoother)
+#              Subscription count: 1 (policy_controller)
+
+# Echo to verify data flow
+ros2 topic echo /cmd_vel_smoothed --once
+```
+
+**Issue: TF_OLD_DATA errors**
+
+Isaac Sim uses simulation time (`/clock` topic). All Nav2 nodes must use `use_sim_time:=true`:
+```bash
+ros2 launch ogre_slam navigation.launch.py use_sim_time:=true ...
+```
+
+**Issue: Policy controller not outputting**
+
+Check if the policy loaded:
+```bash
+ros2 topic echo /joint_command --once
+# Should show JointState with 4 wheel velocities
+
+# If no output, check node logs
+ros2 node info /ogre_policy_controller
+```
+
+### Isaac Sim Action Graph for /joint_command
+
+Isaac Sim must subscribe to `/joint_command` and apply wheel velocities:
+
+1. **ROS2 Subscribe JointState** node:
+   - Topic: `/joint_command`
+   - Queue Size: 1
+
+2. **Script Node** (extract velocities):
+   ```python
+   # Extract wheel velocities from JointState.velocity array
+   # Order: [fr, rr, rl, fl] matching wheel_joint_names
+   ```
+
+3. **Articulation Controller**:
+   - Robot Path: `/World/Ogre/base_link`
+   - Joint Names: `["fr_joint", "rr_joint", "rl_joint", "fl_joint"]`
+   - Apply velocities from JointState
+
+**Alternative: Direct /cmd_vel Action Graph**
+
+If not using the policy controller, Isaac Sim can directly subscribe to `/cmd_vel` and compute wheel velocities using mecanum kinematics (see CLAUDE.md for equations).
+
 ## Version History
 
 | Date | Changes |
 |------|---------|
-| 2025-11-30 | Fixed action clipping bug, replaced energy penalty with exceed-limit penalty |
+| 2025-11-30 | Fixed action clipping bug, replaced energy penalty with exceed-limit penalty, added Nav2 integration docs |
 | 2025-11-29 | Added wheel sign corrections for FR/RR joints |
 | 2025-11-28 | Added export and deploy scripts |
 | 2025-11-27 | Initial implementation |
