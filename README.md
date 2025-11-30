@@ -293,9 +293,11 @@ Episodes terminate early if the robot flips (base height < 0.02m).
 
 **Wheel Sign Corrections (Important for Deployment):**
 
-The USD robot model (`ogre_robot.usd`) has ALL wheel joint axes inverted. Negative velocity = forward motion for all wheels. To create a normalized action space where `[+,+,+,+]` means "all wheels forward", sign corrections are applied.
+The USD robot model (`ogre_robot.usd`) has the **right wheels (FR, RR) with opposite joint axis orientation** from the left wheels (FL, RL). This was empirically verified: sending `[+10, +10, +10, +10]` to all wheels causes the robot to spin CCW instead of moving forward.
 
-**Why BOTH training AND deployment need the same negation (NOT a double negation):**
+To create a normalized action space where `[+,+,+,+]` means "all wheels forward", sign corrections are applied to the **right wheels only**.
+
+**Why BOTH training AND deployment need the same correction:**
 
 Training and deployment are **separate execution environments**. The policy learns in a normalized action space where `[+,+,+,+] = forward`. Both environments must apply the same transformation.
 
@@ -303,9 +305,9 @@ Training and deployment are **separate execution environments**. The policy lear
 ```
 Policy outputs: [+, +, +, +] (normalized: all positive = forward intent)
        ↓
-_apply_action() negates ALL wheels: [-, -, -, -]
+_apply_action() negates FR and RR: [+, -, +, -]
        ↓
-Sent to USD physics: [-, -, -, -]
+Sent to USD physics: [+, -, +, -]
        ↓
 Robot moves FORWARD in training ✓
 ```
@@ -314,31 +316,31 @@ Robot moves FORWARD in training ✓
 ```
 Policy outputs: [+, +, +, +] (same normalized output)
        ↓
-Isaac Sim action graph negates ALL wheels: [-, -, -, -]  ← SAME correction
+Isaac Sim action graph negates FR and RR: [+, -, +, -]  ← SAME correction
        ↓
-Sent to USD physics: [-, -, -, -]
+Sent to USD physics: [+, -, +, -]
        ↓
 Robot moves FORWARD in deployment ✓
 ```
 
-**If you DON'T negate in Isaac Sim:**
+**If you DON'T correct the right wheels in Isaac Sim:**
 ```
 Policy outputs: [+, +, +, +]
        ↓
-NO negation
+NO correction
        ↓
 Sent to USD physics: [+, +, +, +]
        ↓
-Robot moves BACKWARD instead of forward ✗
+Robot SPINS instead of going forward ✗
 ```
 
 **Summary - Where sign corrections are applied:**
 
 | Component | Sign Correction | Notes |
 |-----------|-----------------|-------|
-| Training `_apply_action()` | Negate ALL wheels | Before sending to physics |
-| Training `_get_observations()` | Negate ALL wheels | For observation consistency |
-| Isaac Sim Action Graph | Negate ALL wheels | Multiply all wheel velocities × -1 |
+| Training `_apply_action()` | Negate FR and RR | Right wheel joint axes are opposite |
+| Training `_get_observations()` | Negate FR and RR | For observation consistency |
+| Isaac Sim Action Graph | Negate FR and RR | Multiply FR, RR velocities × -1 |
 | ROS2 Policy Controller | None | Uses standard mecanum forward kinematics |
 
 **Flip Termination:**
