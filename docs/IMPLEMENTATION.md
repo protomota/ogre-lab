@@ -252,14 +252,38 @@ When deployed, Nav2 sends velocity commands (Twist messages). The policy convert
 | Parameter | Value | Description |
 |-----------|-------|-------------|
 | `action_scale` | 8.0 | Multiplier for policy output → wheel velocity (rad/s) |
-| `max_lin_vel` | 0.3 | Maximum linear velocity for training (m/s) |
-| `max_ang_vel` | 1.0 | Maximum angular velocity for training (rad/s) |
+| `max_lin_vel` | 0.5 | Maximum linear velocity for training (m/s) |
+| `max_ang_vel` | 2.0 | Maximum angular velocity for training (rad/s) |
 | `max_wheel_vel` | 8.0 | Safety limit - robot flips above this (rad/s) |
 | `rew_scale_vel_tracking` | 2.0 | Main velocity tracking reward |
 | `rew_scale_exceed_limit` | -1.0 | Penalty for wheel velocities > max_wheel_vel |
 | `rew_scale_uprightness` | 1.0 | Reward for staying upright (+1 upright, -1 flipped) |
 | `decimation` | 4 | Physics steps per control step |
 | `episode_length_s` | 10.0 | Episode duration (seconds) |
+
+### Understanding Velocity Limits
+
+There are two different velocity concepts that often get confused:
+
+**1. Target velocity limits (`max_lin_vel`, `max_ang_vel`):**
+- Range of random velocities sampled during training
+- Policy learns to track velocities in this range
+- Can be set higher than physically achievable - policy learns to get as close as possible
+
+**2. Wheel velocity limit (`max_wheel_vel`):**
+- Hardware safety limit (robot flips above 8 rad/s)
+- Enforced via penalty in reward function
+- Should NOT be changed unless hardware changes
+
+**Physical constraints:**
+- Wheel radius: 0.04m
+- Max wheel velocity: 8 rad/s (before robot flips)
+- Theoretical max linear velocity: 8 × 0.04 = **0.32 m/s**
+
+With `max_lin_vel=0.5` (higher than physically achievable), the policy learns to:
+1. Output maximum wheel velocities for high-speed targets
+2. Achieve ~0.32 m/s actual velocity (the physical limit)
+3. Still get partial tracking reward for getting as close as possible
 
 ### Observation Space (10 dimensions)
 
@@ -573,9 +597,9 @@ joint_vel[:, 1] *= -1  # RR
 # Action scaling
 action_scale = 8.0  # Scales policy output to wheel velocity (rad/s)
 
-# Velocity ranges
-max_lin_vel = 0.3   # Target velocity range (m/s)
-max_ang_vel = 1.0   # Target angular velocity range (rad/s)
+# Velocity ranges (target velocities for training)
+max_lin_vel = 0.5   # Target velocity range (m/s) - higher than physical limit
+max_ang_vel = 2.0   # Target angular velocity range (rad/s)
 max_wheel_vel = 8.0 # Safety limit - robot flips above this (rad/s)
 
 # Reward configuration
@@ -586,13 +610,13 @@ rew_scale_uprightness = 1.0     # Stay upright bonus
 
 ### ROS2 Controller Must Match
 
-The ROS2 policy controller (`ogre_policy_controller`) must use the same `action_scale`:
+The ROS2 policy controller (`ogre_policy_controller`) must use the same velocity limits:
 
 ```yaml
 # policy_controller_params.yaml
 action_scale: 8.0       # MUST match training
-max_lin_vel: 0.3        # MUST match training
-max_ang_vel: 1.0        # MUST match training
+max_lin_vel: 0.5        # MUST match training
+max_ang_vel: 2.0        # MUST match training
 output_mode: "joint_state"
 output_topic: "/joint_command"
 ```
@@ -775,21 +799,25 @@ The costmap configuration controls how close the robot gets to obstacles. If the
 # Costmap inflation (both local and global)
 inflation_layer:
   # inflation_radius = robot_radius + desired_clearance
-  # 0.20m robot + 0.25m clearance = 0.45m
-  inflation_radius: 0.45
+  # 0.20m robot + 0.20m clearance = 0.40m
+  inflation_radius: 0.40
 
   # Lower = costs stay high further from obstacles = more cautious
   # Range: 1.0 (very cautious) to 10.0 (aggressive)
-  cost_scaling_factor: 3.0
+  cost_scaling_factor: 2.5
 
 # DWB controller obstacle avoidance
 FollowPath:
+  # Trajectory lookahead (seconds) - balance between seeing curves and getting stuck
+  sim_time: 1.2
+
   # Higher = stronger obstacle avoidance
   BaseObstacle.scale: 0.02
 
   # Higher = follow planned path more strictly (less corner cutting)
-  PathAlign.scale: 32.0
-  PathDist.scale: 32.0
+  PathAlign.scale: 48.0
+  PathDist.scale: 48.0
+  GoalDist.scale: 24.0
 ```
 
 **Tuning Guide:**
@@ -801,11 +829,38 @@ FollowPath:
 | Robot cuts across obstacles | Increase `BaseObstacle.scale` (try 0.03-0.05) |
 | Robot won't go through narrow gaps | Decrease `inflation_radius` and `cost_scaling_factor` |
 | Path planning fails in tight spaces | Decrease `inflation_radius` below robot_radius + gap_width/2 |
+| Robot doesn't follow green path | Increase `sim_time` (1.5-2.0s) and `PathDist.scale` |
+| Robot too aggressive near obstacles | Decrease `sim_time` (0.8-1.2s) |
+
+### Wall Thickness Requirements
+
+**CRITICAL:** Maze walls must be thick enough for reliable costmap detection.
+
+| Component | Value |
+|-----------|-------|
+| Costmap resolution | 5cm (0.05m) |
+| **Minimum wall thickness** | **10cm (0.10m)** - 2× resolution |
+| **Recommended wall thickness** | **20cm (0.20m)** - 4× resolution |
+
+**Why this matters:**
+- Walls thinner than 2× costmap resolution may be unreliably detected
+- A 2cm wall might fall between costmap cells or only occupy a partial cell
+- At corners, thin walls may not inflate properly, causing the robot to clip them
+
+**Isaac Sim Maze Generator (generate_maze.py):**
+```python
+wall_thickness=0.20,  # 20cm thick (4x costmap resolution for reliable detection)
+```
+
+If you're still having corner collision issues after ensuring proper wall thickness, check:
+1. LIDAR `obstacle_min_range` isn't filtering out nearby walls
+2. The map was saved with proper resolution (5cm)
+3. Costmap update frequency is high enough (5 Hz for local)
 
 **How Inflation Works:**
 
 ```
-                    inflation_radius (0.45m)
+                    inflation_radius (0.40m)
                     ◄────────────────────────►
 
 Wall ████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░
@@ -833,6 +888,8 @@ Lower cost_scaling_factor = slower dropoff = more cautious paths.
 
 | Date | Changes |
 |------|---------|
+| 2025-11-30 | Added wall thickness requirements (20cm min for reliable costmap detection), updated costmap values |
+| 2025-11-30 | Increased velocity limits (max_lin_vel: 0.3→0.5, max_ang_vel: 1.0→2.0) for faster navigation |
 | 2025-11-30 | Fixed action clipping bug, replaced energy penalty with exceed-limit penalty, added Nav2 integration docs, added costmap tuning guide |
 | 2025-11-29 | Added wheel sign corrections for FR/RR joints |
 | 2025-11-28 | Added export and deploy scripts |
