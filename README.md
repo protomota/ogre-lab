@@ -103,6 +103,27 @@ from . import ogre_navigation
 
 ## Training
 
+### ⚠️ CRITICAL: Sync Behavior
+
+**The training script (`train_ogre_navigation.sh`) automatically OVERWRITES the Isaac Lab training environment with the ogre-lab version before each training run.**
+
+This means:
+- Any manual changes made directly to `~/isaac-lab/IsaacLab/source/.../ogre_navigation/` will be **LOST**
+- The ogre-lab version (`~/ogre-lab/isaaclab_env/ogre_navigation/`) is the **single source of truth**
+- Always make environment changes in ogre-lab, never in Isaac Lab directly
+
+**If you have a working config in Isaac Lab that isn't in ogre-lab, copy it to ogre-lab FIRST:**
+```bash
+# Backup working Isaac Lab config to ogre-lab BEFORE running training
+cp ~/isaac-lab/IsaacLab/source/isaaclab_tasks/isaaclab_tasks/direct/ogre_navigation/ogre_navigation_env.py \
+   ~/ogre-lab/isaaclab_env/ogre_navigation/ogre_navigation_env.py
+```
+
+**To skip the sync and use the existing Isaac Lab env as-is:**
+```bash
+./scripts/train_ogre_navigation.sh --no-sync
+```
+
 ### Using the Training Script (Recommended)
 
 The training script automatically syncs the environment before training:
