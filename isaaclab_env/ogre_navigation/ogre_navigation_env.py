@@ -123,6 +123,7 @@ class OgreNavigationEnvCfg(DirectRLEnvCfg):
     rew_scale_ang_vel = 0.25  # Reward for angular velocity accuracy
     rew_scale_energy = -0.0001  # Small penalty for energy use
     rew_scale_smoothness = -0.001  # Small penalty for jerky actions
+    rew_scale_symmetry = -0.1  # Penalty for asymmetric wheel velocities (prevents veering)
 
 
 class OgreNavigationEnv(DirectRLEnv):
@@ -238,6 +239,7 @@ class OgreNavigationEnv(DirectRLEnv):
         # Rewards
         rewards = compute_rewards(
             vel_error=vel_error,
+            target_vel=self.target_vel,
             actions=self.actions,
             prev_actions=self.prev_actions,
             rew_scale_vel_tracking=self.cfg.rew_scale_vel_tracking,
@@ -245,6 +247,7 @@ class OgreNavigationEnv(DirectRLEnv):
             rew_scale_ang_vel=self.cfg.rew_scale_ang_vel,
             rew_scale_energy=self.cfg.rew_scale_energy,
             rew_scale_smoothness=self.cfg.rew_scale_smoothness,
+            rew_scale_symmetry=self.cfg.rew_scale_symmetry,
         )
 
         # Store current actions for next step
@@ -302,6 +305,7 @@ class OgreNavigationEnv(DirectRLEnv):
 @torch.jit.script
 def compute_rewards(
     vel_error: torch.Tensor,
+    target_vel: torch.Tensor,
     actions: torch.Tensor,
     prev_actions: torch.Tensor,
     rew_scale_vel_tracking: float,
@@ -309,12 +313,14 @@ def compute_rewards(
     rew_scale_ang_vel: float,
     rew_scale_energy: float,
     rew_scale_smoothness: float,
+    rew_scale_symmetry: float,
 ) -> torch.Tensor:
     """Compute rewards for velocity tracking.
 
     Args:
         vel_error: Velocity tracking error [vx_err, vy_err, vtheta_err]
-        actions: Current wheel velocity commands
+        target_vel: Target velocity command [vx, vy, vtheta]
+        actions: Current wheel velocity commands [FL, FR, RL, RR]
         prev_actions: Previous wheel velocity commands
         rew_scale_*: Reward scaling factors
 
@@ -340,6 +346,32 @@ def compute_rewards(
     action_diff = actions - prev_actions
     rew_smoothness = rew_scale_smoothness * torch.sum(action_diff ** 2, dim=-1)
 
-    total_reward = rew_vel_tracking + rew_vel_xy + rew_ang_vel + rew_energy + rew_smoothness
+    # Wheel symmetry penalty - penalize when wheels that should match don't
+    # For pure forward/backward (vy=0, vtheta=0), all wheels should be equal
+    # For pure strafe (vx=0, vtheta=0), front pair and rear pair should match
+    # For pure rotation (vx=0, vy=0), left pair and right pair should match (opposite signs)
+    #
+    # Wheel order: [FL, FR, RL, RR] = indices [0, 1, 2, 3]
+    # Left wheels: FL (0), RL (2)
+    # Right wheels: FR (1), RR (3)
+    # Front wheels: FL (0), FR (1)
+    # Rear wheels: RL (2), RR (3)
+    #
+    # For straight line motion, penalize left-right imbalance
+    # Left avg vs Right avg should be similar for forward motion
+    left_avg = (actions[:, 0] + actions[:, 2]) / 2.0  # (FL + RL) / 2
+    right_avg = (actions[:, 1] + actions[:, 3]) / 2.0  # (FR + RR) / 2
+
+    # Only apply symmetry penalty when not rotating (vtheta near zero)
+    # When rotating, left and right SHOULD be different
+    rotation_mask = torch.abs(target_vel[:, 2]) < 0.5  # rad/s threshold
+
+    # Left-right symmetry error (squared difference)
+    lr_symmetry_error = (left_avg - right_avg) ** 2
+
+    # Apply penalty only when not rotating
+    rew_symmetry = rew_scale_symmetry * lr_symmetry_error * rotation_mask.float()
+
+    total_reward = rew_vel_tracking + rew_vel_xy + rew_ang_vel + rew_energy + rew_smoothness + rew_symmetry
 
     return total_reward
