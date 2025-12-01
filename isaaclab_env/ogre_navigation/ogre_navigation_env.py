@@ -123,7 +123,7 @@ class OgreNavigationEnvCfg(DirectRLEnvCfg):
     rew_scale_ang_vel = 0.25  # Reward for angular velocity accuracy
     rew_scale_energy = -0.0001  # Small penalty for energy use
     rew_scale_smoothness = -0.001  # Small penalty for jerky actions
-    rew_scale_symmetry = -0.1  # Penalty for asymmetric wheel velocities (prevents veering)
+    rew_scale_symmetry = -1.0  # 10x stronger penalty for asymmetric wheel velocities (prevents veering)
 
 
 class OgreNavigationEnv(DirectRLEnv):
