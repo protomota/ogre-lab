@@ -74,14 +74,22 @@ Isaac Lab requires its own conda environment with Isaac Sim Python bindings:
 conda activate env_isaaclab
 ```
 
-### Step 2: Symlink Environment into Isaac Lab
+### Step 2: Copy Environment to Isaac Lab
 
-Isaac Lab discovers environments by looking in its `isaaclab_tasks/direct/` directory. Create a symbolic link so changes in ogre-lab are automatically reflected:
+Isaac Lab discovers environments in its `isaaclab_tasks/direct/` directory. Copy the environment from ogre-lab:
 
 ```bash
-ln -sf ~/ogre-lab/isaaclab_env/ogre_navigation \
-  ~/isaac-lab/IsaacLab/source/isaaclab_tasks/isaaclab_tasks/direct/ogre_navigation
+cd ~/ogre-lab
+./scripts/sync_env.sh
 ```
+
+This copies `ogre-lab/isaaclab_env/ogre_navigation/` to the Isaac Lab source tree.
+
+**IMPORTANT:** The training environment exists in two places:
+- `~/ogre-lab/isaaclab_env/ogre_navigation/` - Version controlled (edit this one)
+- `~/isaac-lab/IsaacLab/source/isaaclab_tasks/.../ogre_navigation/` - Used for training (synced copy)
+
+The `sync_env.sh` script keeps them in sync. It runs automatically before training (see below).
 
 ### Step 3: Register the Environment
 
@@ -95,13 +103,38 @@ from . import ogre_navigation
 
 ## Training
 
-### Headless Training (Fast, No GUI)
+### Using the Training Script (Recommended)
+
+The training script automatically syncs the environment before training:
+
+```bash
+cd ~/ogre-lab
+source ~/miniconda3/etc/profile.d/conda.sh
+conda activate env_isaaclab
+
+# Train with default settings (4096 envs, 1000 iterations)
+./scripts/train_ogre_navigation.sh
+
+# Custom environments and iterations
+./scripts/train_ogre_navigation.sh 1024 500
+
+# Skip sync if you haven't changed the environment
+./scripts/train_ogre_navigation.sh --no-sync 4096 1000
+```
+
+### Manual Training (Advanced)
+
+If you need to run training manually, sync first:
 
 ```bash
 conda activate env_isaaclab
-cd ~/isaac-lab/IsaacLab
 
-# Train with 1024 parallel environments for 1000 iterations
+# Sync environment to Isaac Lab
+cd ~/ogre-lab
+./scripts/sync_env.sh
+
+# Run training
+cd ~/isaac-lab/IsaacLab
 ./isaaclab.sh -p scripts/reinforcement_learning/rsl_rl/train.py \
     --task Isaac-Ogre-Navigation-Direct-v0 \
     --num_envs 1024 \
@@ -112,10 +145,10 @@ cd ~/isaac-lab/IsaacLab
 ### Training with Visualization (Debug Mode)
 
 ```bash
-conda activate env_isaaclab
-cd ~/isaac-lab/IsaacLab
+cd ~/ogre-lab
+./scripts/sync_env.sh  # Always sync first!
 
-# Train with 64 environments and GUI to watch training
+cd ~/isaac-lab/IsaacLab
 ./isaaclab.sh -p scripts/reinforcement_learning/rsl_rl/train.py \
     --task Isaac-Ogre-Navigation-Direct-v0 \
     --num_envs 64 \
@@ -248,6 +281,7 @@ The policy is trained to maximize:
 - **Angular velocity accuracy** (weight: 0.25): Reward for rotational velocity tracking
 - **Energy efficiency** (weight: -0.0001): Small penalty for excessive wheel velocities
 - **Smoothness** (weight: -0.001): Small penalty for jerky motion
+- **Wheel symmetry** (weight: -1.0): Penalty for asymmetric left/right wheel velocities during straight-line motion (prevents veering)
 
 ### Robot Parameters
 
@@ -366,7 +400,9 @@ ogre-lab/
 │           ├── __init__.py
 │           └── rsl_rl_ppo_cfg.py # PPO training config
 ├── scripts/
-│   ├── export_policy.sh          # Export trained model
+│   ├── sync_env.sh               # Sync environment to Isaac Lab (run before training)
+│   ├── train_ogre_navigation.sh  # Train policy (auto-syncs first)
+│   ├── export_policy.sh          # Export trained model to ONNX
 │   └── deploy_model.sh           # Deploy to ogre-slam
 └── docs/                         # Additional documentation
 
