@@ -842,44 +842,57 @@ The costmap configuration controls how close the robot gets to obstacles. If the
 | `cost_scaling_factor` | inflation_layer | How quickly costs drop off from obstacles |
 | `BaseObstacle.scale` | FollowPath (DWB) | Weight for obstacle avoidance in trajectory scoring |
 
-**Current Configuration (safe defaults):**
+**Current Configuration:**
 
 ```yaml
 # Costmap inflation (both local and global)
 inflation_layer:
   # inflation_radius = robot_radius + desired_clearance
-  # 0.20m robot + 0.20m clearance = 0.40m
-  inflation_radius: 0.40
+  # 0.20m robot + 0.30m clearance = 0.50m
+  inflation_radius: 0.50
 
   # Lower = costs stay high further from obstacles = more cautious
   # Range: 1.0 (very cautious) to 10.0 (aggressive)
-  cost_scaling_factor: 2.5
+  cost_scaling_factor: 2.0
 
 # DWB controller obstacle avoidance
 FollowPath:
   # Trajectory lookahead (seconds) - balance between seeing curves and getting stuck
   sim_time: 1.2
 
-  # Higher = stronger obstacle avoidance
-  BaseObstacle.scale: 0.02
+  # CRITICAL: BaseObstacle.scale must be high enough to avoid walls!
+  # If too low, robot ignores costmap and drives into obstacles
+  BaseObstacle.scale: 0.5
+  BaseObstacle.sum_scores: false
 
-  # Higher = follow planned path more strictly (less corner cutting)
-  PathAlign.scale: 48.0
-  PathDist.scale: 48.0
+  # Path following weights - balanced with obstacle avoidance
+  PathAlign.scale: 32.0
+  PathDist.scale: 32.0
   GoalDist.scale: 24.0
 ```
+
+**CRITICAL: BaseObstacle.scale Bug**
+
+If the robot drives straight into walls ignoring the costmap, `BaseObstacle.scale` is too low relative to path-following weights.
+
+**Symptom:** Robot follows the green path but clips corners or drives into walls. Planner then fails with "Starting point in lethal space".
+
+**Root cause:** With `BaseObstacle.scale: 0.02` and `PathDist.scale: 48.0`, obstacle avoidance is weighted 2400x less than path following. The robot prioritizes staying on the path over not hitting walls.
+
+**Fix:** Increase `BaseObstacle.scale` to at least 0.5 (25x increase). If still hitting walls, try 1.0 or higher.
 
 **Tuning Guide:**
 
 | Problem | Solution |
 |---------|----------|
+| Robot drives into walls | Increase `BaseObstacle.scale` (try 0.5-2.0) |
 | Robot clips corners | Increase `inflation_radius` (try 0.50-0.60m) |
 | Robot too far from walls | Decrease `inflation_radius` (try 0.35-0.40m) |
-| Robot cuts across obstacles | Increase `BaseObstacle.scale` (try 0.03-0.05) |
+| Robot cuts across obstacles | Increase `BaseObstacle.scale` (try 1.0-2.0) |
 | Robot won't go through narrow gaps | Decrease `inflation_radius` and `cost_scaling_factor` |
 | Path planning fails in tight spaces | Decrease `inflation_radius` below robot_radius + gap_width/2 |
 | Robot doesn't follow green path | Increase `sim_time` (1.5-2.0s) and `PathDist.scale` |
-| Robot too aggressive near obstacles | Decrease `sim_time` (0.8-1.2s) |
+| Robot too cautious near obstacles | Decrease `BaseObstacle.scale` (try 0.3-0.5) |
 
 ### Wall Thickness Requirements
 
