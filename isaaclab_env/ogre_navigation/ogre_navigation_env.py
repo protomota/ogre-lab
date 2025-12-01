@@ -46,7 +46,7 @@ OGRE_MECANUM_CFG = ArticulationCfg(
         activate_contact_sensors=False,
     ),
     init_state=ArticulationCfg.InitialStateCfg(
-        pos=(0.0, 0.0, 0.05),  # Slightly above ground
+        pos=(0.0, 0.0, 0.04),  # Wheel axle height = wheel radius
         joint_pos={
             "fl_joint": 0.0,
             "fr_joint": 0.0,
@@ -62,8 +62,7 @@ OGRE_MECANUM_CFG = ArticulationCfg(
     ),
     actuators={
         "wheels": ImplicitActuatorCfg(
-            joint_names_expr=[".*_joint"],
-            velocity_limit=200.0,  # rad/s - high for simulation
+            joint_names_expr=["fl_joint", "fr_joint", "rl_joint", "rr_joint"],
             effort_limit=10.0,
             stiffness=0.0,
             damping=10.0,
@@ -79,7 +78,11 @@ class OgreNavigationEnvCfg(DirectRLEnvCfg):
     # Environment settings
     decimation = 4  # Physics steps per control step
     episode_length_s = 10.0  # Episode duration
-    action_scale = 50.0  # Scale for wheel velocity actions (rad/s) - increased for proper output magnitude
+
+    # CRITICAL: action_scale multiplies raw policy outputs to get wheel velocity in rad/s
+    # Robot flips at velocities > 8 rad/s, so training targets stay within safe range
+    # Max achievable linear vel = 8 * 0.04 = 0.32 m/s
+    action_scale = 8.0  # Scales policy output to wheel velocity (rad/s)
 
     # Observation and action dimensions
     observation_space = 10  # target_vel(3) + current_vel(3) + wheel_vel(4)
@@ -114,16 +117,22 @@ class OgreNavigationEnvCfg(DirectRLEnvCfg):
     )
 
     # Target velocity ranges (for random sampling during training)
-    max_lin_vel = 8.0  # m/s - max linear velocity
-    max_ang_vel = 6.0  # rad/s - max angular velocity
+    # With action_scale=8, max wheel vel = 8 rad/s
+    # Max achievable body vel = 8 × 0.04 = 0.32 m/s for pure translation
+    max_lin_vel = 0.5   # Target velocity range for training
+    max_ang_vel = 2.0   # Target angular velocity range
 
-    # Reward scales - tuned for positive rewards when tracking well
-    rew_scale_vel_tracking = 1.0  # Reward for accurate velocity tracking
-    rew_scale_vel_xy = 0.5  # Extra reward for xy velocity accuracy
-    rew_scale_ang_vel = 0.25  # Reward for angular velocity accuracy
-    rew_scale_energy = -0.0001  # Small penalty for energy use
-    rew_scale_smoothness = -0.001  # Small penalty for jerky actions
-    rew_scale_symmetry = -1.0  # 10x stronger penalty for asymmetric wheel velocities (prevents veering)
+    # Reward scales - from working training run 2025-11-30_11-39-07
+    rew_scale_vel_tracking = 2.0  # Main reward for velocity tracking
+    rew_scale_vel_xy = 0.0  # Disabled - let main tracking handle it
+    rew_scale_ang_vel = 0.0  # Disabled - let main tracking handle it
+    rew_scale_exceed_limit = -1.0  # Penalty for wheel velocities exceeding max_wheel_vel
+    rew_scale_smoothness = 0.0  # Disabled - focus on tracking first
+    rew_scale_uprightness = 1.0  # Reward for staying upright (+1 upright, -1 flipped)
+    rew_scale_symmetry = -1.0  # Penalty for asymmetric wheel velocities (prevents veering)
+
+    # Safety limit for wheel velocities (robot flips above this)
+    max_wheel_vel = 8.0  # rad/s - same as action_scale
 
 
 class OgreNavigationEnv(DirectRLEnv):
@@ -177,32 +186,42 @@ class OgreNavigationEnv(DirectRLEnv):
     def _apply_action(self) -> None:
         """Apply wheel velocity targets to the robot.
 
-        Note: The front wheels (FL, FR) need to be negated to match the wheel joint
-        axis orientation in the training USD. This ensures the policy learns the
-        correct relationship between actions and robot motion.
+        VERIFIED JOINT ORDER from find_joints(["fl_joint", "fr_joint", "rl_joint", "rr_joint"]):
+            Index 0 = FR (front-right)
+            Index 1 = RR (rear-right)
+            Index 2 = RL (rear-left)
+            Index 3 = FL (front-left)
 
-        Wheel order: [FL, FR, RL, RR] (indices 0, 1, 2, 3)
+        EMPIRICALLY TESTED: With [+6, +6, +6, +6] the robot spins CW (clockwise).
+        - Right wheels (FR, RR) spin backward with positive velocity
+        - Left wheels (RL, FL) spin forward with positive velocity
+
+        To make [+,+,+,+] = forward motion, negate RIGHT wheels (indices 0, 1).
         """
-        # Create corrected actions with proper wheel signs
+        # Apply sign corrections for right wheels to scaled actions
         corrected_actions = self.actions.clone()
-        # Negate front wheels to match joint axis orientation
-        corrected_actions[:, 0] = -corrected_actions[:, 0]  # FL
-        corrected_actions[:, 1] = -corrected_actions[:, 1]  # FR
-
+        corrected_actions[:, 0] *= -1  # FR (right wheel)
+        corrected_actions[:, 1] *= -1  # RR (right wheel)
         self.robot.set_joint_velocity_target(corrected_actions, joint_ids=self._wheel_joint_ids)
 
     def _get_observations(self) -> dict:
-        """Compute observations for the policy."""
+        """Compute observations for the policy.
+
+        VERIFIED JOINT ORDER: [FR, RR, RL, FL] (indices 0, 1, 2, 3)
+
+        Wheel velocities are corrected to match the normalized action space
+        where positive values = forward motion for all wheels. This matches
+        the sign corrections applied in _apply_action().
+        """
         # Get current robot state
         root_vel = self.robot.data.root_lin_vel_b  # Linear velocity in body frame
         root_ang_vel = self.robot.data.root_ang_vel_b  # Angular velocity in body frame
-        joint_vel = self.robot.data.joint_vel[:, self._wheel_joint_ids]
+        joint_vel = self.robot.data.joint_vel[:, self._wheel_joint_ids].clone()
 
-        # Correct wheel velocity signs to match action convention
-        # Front wheels (FL, FR) are negated in _apply_action, so negate observations too
-        corrected_joint_vel = joint_vel.clone()
-        corrected_joint_vel[:, 0] = -corrected_joint_vel[:, 0]  # FL
-        corrected_joint_vel[:, 1] = -corrected_joint_vel[:, 1]  # FR
+        # Negate RIGHT wheel velocities to match normalized action space
+        # FR=index 0, RR=index 1
+        joint_vel[:, 0] *= -1  # FR
+        joint_vel[:, 1] *= -1  # RR
 
         # Current body velocity (vx, vy, vtheta)
         current_vel = torch.cat([
@@ -215,7 +234,7 @@ class OgreNavigationEnv(DirectRLEnv):
         obs = torch.cat([
             self.target_vel,  # Target velocity command (3)
             current_vel,  # Current velocity (3)
-            corrected_joint_vel,  # Wheel velocities (4) - corrected for sign convention
+            joint_vel,  # Wheel velocities (4) - corrected for normalized space
         ], dim=-1)
 
         return {"policy": obs}
@@ -225,7 +244,6 @@ class OgreNavigationEnv(DirectRLEnv):
         # Get current velocities
         root_vel = self.robot.data.root_lin_vel_b
         root_ang_vel = self.robot.data.root_ang_vel_b
-        joint_vel = self.robot.data.joint_vel[:, self._wheel_joint_ids]
 
         current_vel = torch.cat([
             root_vel[:, 0:1],
@@ -236,17 +254,26 @@ class OgreNavigationEnv(DirectRLEnv):
         # Velocity tracking error
         vel_error = self.target_vel - current_vel
 
+        # Compute uprightness from quaternion (how much the robot is tilted)
+        # Get the z-component of the "up" vector in world frame
+        root_quat = self.robot.data.root_quat_w  # (num_envs, 4) wxyz format
+        qw, qx, qy, qz = root_quat[:, 0], root_quat[:, 1], root_quat[:, 2], root_quat[:, 3]
+        up_z = 1.0 - 2.0 * (qx * qx + qy * qy)  # 1.0 = upright, -1.0 = upside down
+
         # Rewards
         rewards = compute_rewards(
             vel_error=vel_error,
             target_vel=self.target_vel,
             actions=self.actions,
             prev_actions=self.prev_actions,
+            up_z=up_z,
             rew_scale_vel_tracking=self.cfg.rew_scale_vel_tracking,
             rew_scale_vel_xy=self.cfg.rew_scale_vel_xy,
             rew_scale_ang_vel=self.cfg.rew_scale_ang_vel,
-            rew_scale_energy=self.cfg.rew_scale_energy,
+            rew_scale_exceed_limit=self.cfg.rew_scale_exceed_limit,
+            max_wheel_vel=self.cfg.max_wheel_vel,
             rew_scale_smoothness=self.cfg.rew_scale_smoothness,
+            rew_scale_uprightness=self.cfg.rew_scale_uprightness,
             rew_scale_symmetry=self.cfg.rew_scale_symmetry,
         )
 
@@ -260,8 +287,17 @@ class OgreNavigationEnv(DirectRLEnv):
         # Timeout
         time_out = self.episode_length_buf >= self.max_episode_length - 1
 
-        # No early termination for velocity tracking - let it learn from mistakes
-        terminated = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
+        # Terminate if robot has flipped (base height drops below threshold)
+        # Robot base_link is at wheel axle height (0.04m) when upright
+        # If base drops below 0.02m (half wheel radius), robot has flipped
+        root_pos_z = self.robot.data.root_pos_w[:, 2]  # Z position of base
+        env_origins_z = self.scene.env_origins[:, 2]
+        height_above_ground = root_pos_z - env_origins_z
+
+        # Flipped if base is below half wheel radius (0.02m)
+        flipped = height_above_ground < 0.02
+
+        terminated = flipped
 
         return terminated, time_out
 
@@ -308,11 +344,14 @@ def compute_rewards(
     target_vel: torch.Tensor,
     actions: torch.Tensor,
     prev_actions: torch.Tensor,
+    up_z: torch.Tensor,
     rew_scale_vel_tracking: float,
     rew_scale_vel_xy: float,
     rew_scale_ang_vel: float,
-    rew_scale_energy: float,
+    rew_scale_exceed_limit: float,
+    max_wheel_vel: float,
     rew_scale_smoothness: float,
+    rew_scale_uprightness: float,
     rew_scale_symmetry: float,
 ) -> torch.Tensor:
     """Compute rewards for velocity tracking.
@@ -320,50 +359,49 @@ def compute_rewards(
     Args:
         vel_error: Velocity tracking error [vx_err, vy_err, vtheta_err]
         target_vel: Target velocity command [vx, vy, vtheta]
-        actions: Current wheel velocity commands [FL, FR, RL, RR]
+        actions: Current wheel velocity commands (in rad/s, already scaled)
         prev_actions: Previous wheel velocity commands
-        rew_scale_*: Reward scaling factors
+        up_z: Z-component of robot's up vector (1.0=upright, -1.0=flipped)
+        rew_scale_exceed_limit: Penalty scale for exceeding velocity limit
+        max_wheel_vel: Maximum safe wheel velocity (rad/s)
+        rew_scale_*: Other reward scaling factors
 
     Returns:
         Total reward tensor
     """
-    # Velocity tracking reward (exponential - peaks at zero error)
+    # Velocity tracking reward using softer exponential decay
     vel_error_norm = torch.sum(vel_error ** 2, dim=-1)
-    rew_vel_tracking = rew_scale_vel_tracking * torch.exp(-vel_error_norm)
+    rew_vel_tracking = rew_scale_vel_tracking * torch.exp(-vel_error_norm / 0.25)
 
-    # Extra reward for xy velocity tracking
+    # Extra reward for xy velocity tracking (if enabled)
     xy_error = torch.sum(vel_error[:, :2] ** 2, dim=-1)
-    rew_vel_xy = rew_scale_vel_xy * torch.exp(-xy_error)
+    rew_vel_xy = rew_scale_vel_xy * torch.exp(-xy_error / 0.25)
 
-    # Angular velocity tracking
+    # Angular velocity tracking (if enabled)
     ang_error = vel_error[:, 2] ** 2
-    rew_ang_vel = rew_scale_ang_vel * torch.exp(-ang_error)
+    rew_ang_vel = rew_scale_ang_vel * torch.exp(-ang_error / 0.25)
 
-    # Energy penalty (penalize high wheel velocities)
-    rew_energy = rew_scale_energy * torch.sum(actions ** 2, dim=-1)
+    # Exceed limit penalty: Only penalize wheel velocities ABOVE the safe threshold
+    # This allows any velocity 0-8 rad/s without penalty, but strongly penalizes > 8
+    abs_actions = torch.abs(actions)
+    excess = torch.clamp(abs_actions - max_wheel_vel, min=0.0)
+    rew_exceed_limit = rew_scale_exceed_limit * torch.sum(excess ** 2, dim=-1)
 
     # Smoothness penalty (penalize jerky motion)
     action_diff = actions - prev_actions
     rew_smoothness = rew_scale_smoothness * torch.sum(action_diff ** 2, dim=-1)
 
-    # Wheel symmetry penalty - penalize when wheels that should match don't
-    # For pure forward/backward (vy=0, vtheta=0), all wheels should be equal
-    # For pure strafe (vx=0, vtheta=0), front pair and rear pair should match
-    # For pure rotation (vx=0, vy=0), left pair and right pair should match (opposite signs)
-    #
-    # Wheel order: [FL, FR, RL, RR] = indices [0, 1, 2, 3]
-    # Left wheels: FL (0), RL (2)
-    # Right wheels: FR (1), RR (3)
-    # Front wheels: FL (0), FR (1)
-    # Rear wheels: RL (2), RR (3)
-    #
-    # For straight line motion, penalize left-right imbalance
-    # Left avg vs Right avg should be similar for forward motion
-    left_avg = (actions[:, 0] + actions[:, 2]) / 2.0  # (FL + RL) / 2
-    right_avg = (actions[:, 1] + actions[:, 3]) / 2.0  # (FR + RR) / 2
+    # Uprightness reward: +1 when upright (up_z=1), -1 when flipped (up_z=-1)
+    rew_uprightness = rew_scale_uprightness * up_z
+
+    # Wheel symmetry penalty - penalize left-right imbalance during straight motion
+    # VERIFIED JOINT ORDER: [FR, RR, RL, FL] = indices [0, 1, 2, 3]
+    # Right wheels: FR (0), RR (1)
+    # Left wheels: RL (2), FL (3)
+    right_avg = (actions[:, 0] + actions[:, 1]) / 2.0  # (FR + RR) / 2
+    left_avg = (actions[:, 2] + actions[:, 3]) / 2.0   # (RL + FL) / 2
 
     # Only apply symmetry penalty when not rotating (vtheta near zero)
-    # When rotating, left and right SHOULD be different
     rotation_mask = torch.abs(target_vel[:, 2]) < 0.5  # rad/s threshold
 
     # Left-right symmetry error (squared difference)
@@ -372,6 +410,6 @@ def compute_rewards(
     # Apply penalty only when not rotating
     rew_symmetry = rew_scale_symmetry * lr_symmetry_error * rotation_mask.float()
 
-    total_reward = rew_vel_tracking + rew_vel_xy + rew_ang_vel + rew_energy + rew_smoothness + rew_symmetry
+    total_reward = rew_vel_tracking + rew_vel_xy + rew_ang_vel + rew_exceed_limit + rew_smoothness + rew_uprightness + rew_symmetry
 
     return total_reward
