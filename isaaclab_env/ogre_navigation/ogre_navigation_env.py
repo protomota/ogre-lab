@@ -118,11 +118,10 @@ class OgreNavigationEnvCfg(DirectRLEnvCfg):
 
     # Target velocity ranges (for random sampling during training)
     # With action_scale=8, max wheel vel = 8 rad/s
-    # Max achievable body vel = 8 × 0.04 = 0.32 m/s for pure translation
-    # NOTE: These are the target velocity ranges for training - NOT limits!
-    # The policy will learn to track velocities within this range.
-    max_lin_vel = 8.0   # Target velocity range for training (m/s)
-    max_ang_vel = 6.0   # Target angular velocity range (rad/s)
+    # Max achievable body vel = 8 rad/s × 0.04m = 0.32 m/s for pure translation
+    # Set slightly above max achievable to ensure full wheel velocity range is used
+    max_lin_vel = 0.5   # Target body velocity range (m/s) - NOT wheel velocity!
+    max_ang_vel = 2.0   # Target angular velocity range (rad/s)
 
     # Reward scales - from working training run 2025-11-30_11-39-07
     rew_scale_vel_tracking = 2.0  # Main reward for velocity tracking
