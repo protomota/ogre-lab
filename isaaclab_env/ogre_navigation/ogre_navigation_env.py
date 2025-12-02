@@ -119,8 +119,10 @@ class OgreNavigationEnvCfg(DirectRLEnvCfg):
     # Target velocity ranges (for random sampling during training)
     # With action_scale=8, max wheel vel = 8 rad/s
     # Max achievable body vel = 8 × 0.04 = 0.32 m/s for pure translation
-    max_lin_vel = 0.5   # Target velocity range for training
-    max_ang_vel = 2.0   # Target angular velocity range
+    # NOTE: These are the target velocity ranges for training - NOT limits!
+    # The policy will learn to track velocities within this range.
+    max_lin_vel = 8.0   # Target velocity range for training (m/s)
+    max_ang_vel = 6.0   # Target angular velocity range (rad/s)
 
     # Reward scales - from working training run 2025-11-30_11-39-07
     rew_scale_vel_tracking = 2.0  # Main reward for velocity tracking
@@ -395,11 +397,12 @@ def compute_rewards(
     rew_uprightness = rew_scale_uprightness * up_z
 
     # Wheel symmetry penalty - penalize left-right imbalance during straight motion
-    # VERIFIED JOINT ORDER: [FR, RR, RL, FL] = indices [0, 1, 2, 3]
-    # Right wheels: FR (0), RR (1)
-    # Left wheels: RL (2), FL (3)
-    right_avg = (actions[:, 0] + actions[:, 1]) / 2.0  # (FR + RR) / 2
-    left_avg = (actions[:, 2] + actions[:, 3]) / 2.0   # (RL + FL) / 2
+    # Policy outputs actions as [FL, FR, RL, RR] = indices [0, 1, 2, 3]
+    # (Note: _apply_action() reorders these to match joint_ids order)
+    # Left wheels: FL (0), RL (2)
+    # Right wheels: FR (1), RR (3)
+    left_avg = (actions[:, 0] + actions[:, 2]) / 2.0   # (FL + RL) / 2
+    right_avg = (actions[:, 1] + actions[:, 3]) / 2.0  # (FR + RR) / 2
 
     # Only apply symmetry penalty when not rotating (vtheta near zero)
     rotation_mask = torch.abs(target_vel[:, 2]) < 0.5  # rad/s threshold
