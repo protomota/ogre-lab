@@ -14,6 +14,10 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# Activate Isaac Lab conda environment (Isaac Lab 5.1)
+source ~/miniconda3/etc/profile.d/conda.sh
+conda activate env_isaaclab
+
 # Parse arguments
 NO_SYNC=""
 NUM_ENVS=4096
