@@ -596,30 +596,34 @@ This repository is part of the **Project Ogre** ecosystem for mecanum drive robo
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                           TRAINING (ogre-lab)                               │
-│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐                  │
-│  │ Isaac Lab    │───▶│ Train Policy │───▶│ Export ONNX  │                  │
-│  │ Environment  │    │ (RSL-RL/PPO) │    │ & JIT Models │                  │
-│  └──────────────┘    └──────────────┘    └──────────────┘                  │
+│                            TRAINING (ogre-lab)                              │
+│                                                                             │
+│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐                   │
+│  │  Isaac Lab   │───▶│ Train Policy │───▶│ Export ONNX  │                   │
+│  │ Environment  │    │ (RSL-RL/PPO) │    │ & JIT Models │                   │
+│  └──────────────┘    └──────────────┘    └──────────────┘                   │
 │         │                                        │                          │
 │         │ uses                                   │ produces                 │
 │         ▼                                        ▼                          │
 │  ogre_robot.usd                          models/policy.onnx                 │
 │  (from ogre-slam)                        models/policy.pt                   │
+│                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
-                                   │
-                                   │ deploy
-                                   ▼
+                                    │
+                                    │ deploy
+                                    ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                          DEPLOYMENT (ogre-slam)                             │
-│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐                  │
-│  │    Nav2      │───▶│   Policy     │───▶│ Robot/Isaac  │                  │
-│  │ (planning)   │    │  Controller  │    │     Sim      │                  │
-│  └──────────────┘    └──────────────┘    └──────────────┘                  │
+│                           DEPLOYMENT (ogre-slam)                            │
+│                                                                             │
+│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐                   │
+│  │     Nav2     │───▶│    Policy    │───▶│ Robot/Isaac  │                   │
+│  │  (planning)  │    │  Controller  │    │     Sim      │                   │
+│  └──────────────┘    └──────────────┘    └──────────────┘                   │
 │                             │                                               │
 │                             │ runs                                          │
 │                             ▼                                               │
 │                      policy.onnx (from ogre-lab)                            │
+│                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
