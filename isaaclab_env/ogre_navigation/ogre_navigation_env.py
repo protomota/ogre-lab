@@ -130,7 +130,8 @@ class OgreNavigationEnvCfg(DirectRLEnvCfg):
     rew_scale_exceed_limit = -1.0  # Penalty for wheel velocities exceeding max_wheel_vel
     rew_scale_smoothness = 0.0  # Disabled - focus on tracking first
     rew_scale_uprightness = 1.0  # Reward for staying upright (+1 upright, -1 flipped)
-    rew_scale_symmetry = -1.0  # Penalty for asymmetric wheel velocities (prevents veering)
+    rew_scale_symmetry = -0.1  # Gentle penalty for left-right imbalance
+    rew_scale_diagonal_symmetry = -0.1  # Gentle penalty for diagonal imbalance
 
     # Safety limit for wheel velocities (robot flips above this)
     max_wheel_vel = 8.0  # rad/s - same as action_scale
@@ -276,6 +277,7 @@ class OgreNavigationEnv(DirectRLEnv):
             rew_scale_smoothness=self.cfg.rew_scale_smoothness,
             rew_scale_uprightness=self.cfg.rew_scale_uprightness,
             rew_scale_symmetry=self.cfg.rew_scale_symmetry,
+            rew_scale_diagonal_symmetry=self.cfg.rew_scale_diagonal_symmetry,
         )
 
         # Store current actions for next step
@@ -354,6 +356,7 @@ def compute_rewards(
     rew_scale_smoothness: float,
     rew_scale_uprightness: float,
     rew_scale_symmetry: float,
+    rew_scale_diagonal_symmetry: float,
 ) -> torch.Tensor:
     """Compute rewards for velocity tracking.
 
@@ -396,12 +399,11 @@ def compute_rewards(
     rew_uprightness = rew_scale_uprightness * up_z
 
     # Wheel symmetry penalty - penalize left-right imbalance during straight motion
-    # Policy outputs actions as [FL, FR, RL, RR] = indices [0, 1, 2, 3]
-    # (Note: _apply_action() reorders these to match joint_ids order)
-    # Left wheels: FL (0), RL (2)
-    # Right wheels: FR (1), RR (3)
-    left_avg = (actions[:, 0] + actions[:, 2]) / 2.0   # (FL + RL) / 2
-    right_avg = (actions[:, 1] + actions[:, 3]) / 2.0  # (FR + RR) / 2
+    # Training order: [FR, RR, RL, FL] = indices [0, 1, 2, 3]
+    # Left wheels: RL (2), FL (3)
+    # Right wheels: FR (0), RR (1)
+    left_avg = (actions[:, 2] + actions[:, 3]) / 2.0   # (RL + FL) / 2
+    right_avg = (actions[:, 0] + actions[:, 1]) / 2.0  # (FR + RR) / 2
 
     # Only apply symmetry penalty when not rotating (vtheta near zero)
     rotation_mask = torch.abs(target_vel[:, 2]) < 0.5  # rad/s threshold
@@ -412,6 +414,17 @@ def compute_rewards(
     # Apply penalty only when not rotating
     rew_symmetry = rew_scale_symmetry * lr_symmetry_error * rotation_mask.float()
 
-    total_reward = rew_vel_tracking + rew_vel_xy + rew_ang_vel + rew_exceed_limit + rew_smoothness + rew_uprightness + rew_symmetry
+    # Diagonal symmetry penalty for strafe motion
+    # For proper strafe: FL should match RR, FR should match RL (diagonal pairs)
+    # Training order: [FR, RR, RL, FL] = indices [0, 1, 2, 3]
+    diag1_diff = actions[:, 3] - actions[:, 1]  # FL - RR (should be equal during strafe)
+    diag2_diff = actions[:, 0] - actions[:, 2]  # FR - RL (should be equal during strafe)
+    diagonal_symmetry_error = diag1_diff ** 2 + diag2_diff ** 2
+
+    # Apply diagonal penalty during strafe (significant vy, low rotation)
+    strafe_mask = (torch.abs(target_vel[:, 1]) > 0.1) & rotation_mask
+    rew_diagonal_symmetry = rew_scale_diagonal_symmetry * diagonal_symmetry_error * strafe_mask.float()
+
+    total_reward = rew_vel_tracking + rew_vel_xy + rew_ang_vel + rew_exceed_limit + rew_smoothness + rew_uprightness + rew_symmetry + rew_diagonal_symmetry
 
     return total_reward
